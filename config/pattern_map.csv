@@ -1,0 +1,24 @@
+key,kind,predicate,task_kind,note
+locatedAt,template,locatedAt,noop,초기 배치로 흡수
+moveTo,template,moveTo,move,행동별로 술어가 갈린다 (아래 move_action 행)
+stopAt,template,stopAt,noop,정지 — wait task 없음
+stayAt,template,occupy,noop,피격 후 잔류
+directFireAt,template,directFireAt,fire_direct,
+aimAt,template,aimAt,aim,포신 정렬
+indirectFireAt,template,indirectFireAt,fire_indirect,
+hitBy,template,hitBy,noop,피격 — 결과 상태로 표현
+hitArea,template,hitArea,noop,주변 탄착
+targetArea,template,hitArea,noop,직전 탄착 이벤트의 대상 구역
+stateInit,template,stateChangedTo,noop,
+stateChange,template,stateChangedTo,noop,
+stateHold,template,stateChangedTo,noop,
+noTask,template,noTask,noop,이후 이동·사격 task 금지 플래그
+engAttacker,template,engagementPair,noop,교전기록 — 공격자/목표 확정
+engSource,template,engagementSource,noop,교전기록 — 피격 원천 확정
+후퇴 이동,move_action,retreatTo,move,
+방어선 재편성 이동,move_action,defend,move,
+공격 대형 이동,move_action,approach,move,
+지상 이동,move_action,moveTo,move,
+방어 위치 이동,move_action,defend,move,
+감시 위치 이동 및 관측 방향 유지,move_action,moveTo,move,
+보급 이동 및 정차,move_action,transportTo,move,
