@@ -1,0 +1,27 @@
+entity_class,direct_min_m,direct_max_m,indirect_min_m,indirect_max_m,unverified,note
+US Army M4,0,500,,,0,M4 소총 유효사거리
+Russian Soldier AK47,0,400,,,0,AK47 유효사거리
+Russian Soldier SA7,0,500,,,0,MANPADS. 시나리오에서 사격하지 않음
+Russian Soldier Sniper-127,0,1800,,,0,대물저격총
+US Army XM107,0,1800,,,0,대물저격총
+Turkish Soldier RPG,0,500,,,0,휴대용 RPG
+US Army Javelin,65,2500,,,0,대전차 미사일 최소사거리 있음
+T-69 MBT,0,2500,,,0,전차 주포 직접사격
+T-72 MBT,0,2500,,,0,전차 주포 직접사격
+T-80 MBT,0,2500,,,0,전차 주포 직접사격
+M1A2 Abrams MBT,0,3000,,,0,전차 주포 직접사격
+BTR-60 APC,0,1500,,,0,차재 기관총
+BTR-80 APC,0,1500,,,0,차재 기관총
+LAV III APC,0,1800,,,0,차재 기관총
+M113 APC,0,1800,,,0,M2HB 기관총
+ZPU-4 AA Gun,0,1400,,,0,대공기관포
+GAZ-66 Truck,,,,,0,비무장 수송
+M35 Truck,,,,,0,비무장 수송
+M1028 FMTV Canvas Cargo Truck,,,,,0,비무장 수송
+M1083A1 FMTV Flatbed Truck,,,,,0,비무장 수송
+MO-120RT-61 Mortar,,,1100,8100,0,120mm 박격포
+M109 Howitzer,,,2000,18000,0,155mm 자주포
+AHS Krab Howitzer,,,2000,40000,0,155mm 자주포
+CAESAR SP Howitzer,,,2000,42000,0,155mm 자주포
+M901 Patriot Launcher,,,,,1,지상 간접사격 성립 여부 미확인 (설계 스펙 §8.3)
+MIM-104 Patriot Launcher,,,,,1,지상 간접사격 성립 여부 미확인 (설계 스펙 §8.3)
