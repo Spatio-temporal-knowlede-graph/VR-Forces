@@ -9,6 +9,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+# Windows 기본 콘솔은 cp949라 리포트의 '—' 같은 문자에서 죽는다.
+# 사용자가 PYTHONIOENCODING을 걸어야 하는 상황을 만들지 않는다.
+for _s in (sys.stdout, sys.stderr):
+    if hasattr(_s, "reconfigure"):
+        _s.reconfigure(encoding="utf-8", errors="replace")
+
 from vtmak.gates import blocking                                  # noqa: E402
 from vtmak.geometry import BattlefieldLayout                      # noqa: E402
 from vtmak.parser import Event                                    # noqa: E402
