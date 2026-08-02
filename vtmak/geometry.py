@@ -106,6 +106,13 @@ class BattlefieldLayout:
         }
         self._static: dict[str, str] = dict(data.get("static_targets") or {})
         self._m_lat, self._m_lon = _deg_scales(self.origin_lat)
+        lb = data.get("land_boundary") or {}
+        # 해안선. normal 방향으로 offset_m를 넘으면 바다다. 실측으로 역산했다
+        # (v1에서 물에 빠진 객체와 육지에 있던 객체를 분리하는 선).
+        self.coast_normal: tuple[float, float] | None = (
+            tuple(lb["normal"]) if lb.get("normal") else None)
+        self.coast_offset_m: float = float(lb.get("offset_m", 0.0))
+        self.coast_margin_m: float = float(lb.get("margin_m", 0.0))
 
     @classmethod
     def load(cls, path) -> "BattlefieldLayout":
@@ -140,6 +147,15 @@ class BattlefieldLayout:
 
     def distance_m(self, a_id: str, b_id: str) -> float:
         return ground_distance(self.coord(a_id), self.coord(b_id))
+
+    def land_margin_m(self, location_id: str) -> float | None:
+        """해안선까지 남은 거리(m). 음수면 바다. 해안선 미정의면 None."""
+        xy = self._local.get(location_id)
+        if xy is None or self.coast_normal is None:
+            return None
+        nx, ny = self.coast_normal
+        return self.coast_offset_m - (nx * xy[0] * self.scale
+                                      + ny * xy[1] * self.scale)
 
     def _project(self, x: float, y: float) -> Coord:
         """로컬 미터 → WGS84. bearing_deg는 +y축이 진북에서 시계방향으로

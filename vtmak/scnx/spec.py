@@ -14,6 +14,7 @@ from ..geometry import BattlefieldLayout, Coord
 from ..parser import Event, PatternMap
 from ..ranges import WeaponRanges
 from ..registry import EntityDef
+from ..roster import unit_of
 from .catalog import DisCatalog, TaskCatalog
 from .ids import IdAllocator
 from .plan import PlanStep, build_entity_plan
@@ -66,6 +67,30 @@ def jitter_offset(key: str, meters: float = JITTER_M) -> tuple[float, float]:
     return dx, dy
 
 
+SUPPRESSED_STATES = {"제압"}
+
+
+def suppression_events(events: list[Event]) -> set[str]:
+    """표적이 제압 상태가 된 직접사격 event_id.
+
+    원문은 사격 → 피격 → 상태전환을 세 문장으로 나눠 쓴다. 셋을 이어붙여
+    '이 사격은 제압사격이었다'를 판정한다. 그런 사격은 fire-at-target 대신
+    provide_suppressive_fire_loc으로 저작한다(yewon_test.pln에서 수확).
+    """
+    became: dict[str, int] = {}      # 객체 → 제압된 시각
+    for e in events:
+        if e.template == "stateChange" and e.state_to in SUPPRESSED_STATES:
+            became.setdefault(e.actor, e.time_s)
+    out: set[str] = set()
+    for e in events:
+        if e.template != "directFireAt" or not e.target:
+            continue
+        t = became.get(e.target)
+        if t is not None and t >= e.time_s:
+            out.add(e.event_id)
+    return out
+
+
 class _Ctx:
     """plan.PlanContext 구현."""
 
@@ -77,6 +102,14 @@ class _Ctx:
         self._reg = registry
         self._uuids = entity_uuids
         self.referenced_locs: set[str] = set()
+        # 부대 선두 — 대형 추종 이동(follow-entity)의 추종 대상.
+        self._leader: dict[str, str] = {}
+        for oid in sorted(entity_uuids):
+            self._leader.setdefault(unit_of(oid), oid)
+
+    def unit_leader(self, object_id: str) -> str | None:
+        lead = self._leader.get(unit_of(object_id))
+        return None if lead == object_id else lead
 
     def entity_uuid(self, object_id: str) -> str | None:
         return self._uuids.get(object_id)
@@ -135,6 +168,7 @@ def build_spec(events: list[Event], registry: dict[str, EntityDef],
     # 반드시 어긋난다).
     fire_distance = {g.event_id: g.distance_m
                      for g in engagement_pairs(events, registry, layout)}
+    suppression = suppression_events(events)
 
     by_actor: dict[str, list[Event]] = {oid: [] for oid in taskable}
     for e in events:
@@ -143,7 +177,7 @@ def build_spec(events: list[Event], registry: dict[str, EntityDef],
     for oid, d in taskable.items():
         spec.entity_plans[oid] = build_entity_plan(
             by_actor[oid], d, pattern_map, catalog, ranges, ctx,
-            fire_distance)
+            fire_distance, suppression)
 
     used = set(ctx.referenced_locs) | {
         d.initial_location for d in taskable.values() if d.initial_location}

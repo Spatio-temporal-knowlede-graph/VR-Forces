@@ -6,7 +6,7 @@ stayAt,template,occupy,noop,피격 후 잔류
 directFireAt,template,directFireAt,fire_direct,
 aimAt,template,aimAt,noop,포신 정렬 — VR-Forces ffe-* 태스크가 조준까지 처리하므로 별도 태스크 없음. 사거리는 G0가 별도로 검사
 indirectFireAt,template,indirectFireAt,fire_indirect,
-hitBy,template,hitBy,noop,피격 — 결과 상태로 표현
+hitBy,template,hitBy,take_cover,피격 후 엄폐(find_cover). Threat = 피격 원천 객체
 hitArea,template,hitArea,noop,주변 탄착
 targetArea,template,hitArea,noop,직전 탄착 이벤트의 대상 구역
 stateInit,template,stateChangedTo,noop,
@@ -17,8 +17,8 @@ engAttacker,template,engagementPair,noop,교전기록 — 공격자/목표 확�
 engSource,template,engagementSource,noop,교전기록 — 피격 원천 확정
 후퇴 이동,move_action,retreatTo,move,
 방어선 재편성 이동,move_action,defend,move,
-공격 대형 이동,move_action,approach,move,
+공격 대형 이동,move_action,approach,follow,대형 유지 이동(follow-entity). 부대 선두를 추종
 지상 이동,move_action,moveTo,move,
 방어 위치 이동,move_action,defend,move,
 감시 위치 이동 및 관측 방향 유지,move_action,moveTo,move,
-보급 이동 및 정차,move_action,transportTo,move,
+보급 이동 및 정차,move_action,transportTo,move_slow,저속 보급 기동(set-speed + 이동)

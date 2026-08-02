@@ -25,17 +25,32 @@ from .catalog import TaskCatalog
 LABEL_CANDIDATES: dict[tuple[str, str], list[str]] = {
     ("move", "COORD"): ["좌표로 이동", "통제점으로 이동"],
     ("move", "ENTITY"): ["좌표로 이동", "통제점으로 이동"],
+    ("move_slow", "COORD"): ["좌표로 이동", "통제점으로 이동"],
     ("fire_direct", "ENTITY"): ["대상 직접사격", "대상 자동무장 사격"],
     ("fire_direct", "COORD"): ["대상 직접사격"],
     ("fire_indirect", "COORD"): ["좌표 대상 간접사격"],
     ("fire_indirect", "ENTITY"): ["Entity 대상 간접사격", "좌표 대상 간접사격"],
     ("aim", "ENTITY"): ["객체 조준"],
     ("aim", "COORD"): ["객체 조준"],
+    # yewon_test.pln에서 수확한 스크립트 태스크
+    ("suppress", "ENTITY"): ["제압사격"],       # 표적 좌표만 필요(uuid 불필요)
+    ("suppress", "COORD"): ["제압사격"],
+    ("take_cover", "ENTITY"): ["피격 후 엄폐"],  # Threat = 피격 원천 객체
+    ("follow", "ENTITY"): ["대형 추종 이동"],    # 부대 선두를 추종
 }
 
-# task_kind → 사거리 종류. noop/move는 사거리 검사 대상이 아니다.
-FIRE_KIND = {"fire_direct": "direct", "fire_indirect": "indirect",
-             "aim": "indirect"}
+# task_kind → 사거리 종류. 이동·엄폐는 사거리 검사 대상이 아니다.
+FIRE_KIND = {"fire_direct": "direct", "suppress": "direct",
+             "fire_indirect": "indirect", "aim": "indirect"}
+
+# task_kind → 참조 대상을 어느 필드에서 가져오는가.
+REF_FIELD = {"fire_direct": "target", "suppress": "target",
+             "fire_indirect": "target", "aim": "target",
+             "move": "dst", "move_slow": "dst",
+             "take_cover": "source_obj", "follow": "unit_leader"}
+
+# 보급 차량 저속 기동(m/s). set-speed 템플릿의 기본값을 이걸로 바꾼다.
+SUPPLY_SPEED_MPS = 8.0
 
 
 class PlanContext(Protocol):
@@ -44,6 +59,7 @@ class PlanContext(Protocol):
     def ref_uuid(self, ref: str) -> str: ...
     def coord_of(self, ref: str) -> Coord: ...
     def ref_kind(self, ref: str) -> str: ...   # ENTITY | COORD
+    def unit_leader(self, object_id: str) -> str | None: ...
 
 
 @dataclass
@@ -61,41 +77,58 @@ class PlanStep:
 def build_entity_plan(events: list[Event], entity: EntityDef,
                       pattern_map: PatternMap, catalog: TaskCatalog,
                       ranges: WeaponRanges, ctx: PlanContext,
-                      fire_distance: dict[str, float]) -> list[PlanStep]:
+                      fire_distance: dict[str, float],
+                      suppression: set[str] | None = None) -> list[PlanStep]:
     """fire_distance는 gates.engagement_pairs가 계산한 {event_id: 거리 m}.
 
     사거리 거리를 여기서 다시 계산하지 않는다. 교전 시점의 위치를 푸는
     로직(피격 문장 우선, 이동 추적)이 두 벌 있으면 반드시 어긋난다.
+
+    suppression은 '표적이 제압 상태가 된' 직접사격 event_id 집합. 그런 사격은
+    fire-at-target 대신 provide_suppressive_fire_loc으로 저작한다.
     """
+    suppression = suppression or set()
     steps: list[PlanStep] = []
     for e in sorted(events, key=lambda x: (x.time_s, x.event_id)):
         kind = pattern_map.task_kind(e.template, e.action_label)
         if kind in ("", "noop"):
             continue
-        steps.append(_one(e, entity, kind, catalog, ranges, ctx, fire_distance))
+        if kind == "fire_direct" and e.event_id in suppression:
+            kind = "suppress"
+        steps.extend(_one(e, entity, kind, catalog, ranges, ctx, fire_distance))
     return steps
+
+
+def _resolve_ref(e: Event, kind: str, ctx: PlanContext) -> str:
+    field = REF_FIELD.get(kind, "dst")
+    if field == "unit_leader":
+        return ctx.unit_leader(e.actor) or ""
+    return getattr(e, field, "") or e.dst or e.target
 
 
 def _one(e: Event, entity: EntityDef, kind: str, catalog: TaskCatalog,
          ranges: WeaponRanges, ctx: PlanContext,
-         fire_distance: dict[str, float]) -> PlanStep:
+         fire_distance: dict[str, float]) -> list[PlanStep]:
     step = PlanStep(e.event_id, e.time_s, e.template, kind, None, None)
-    ref = e.target or e.dst
+    ref = _resolve_ref(e, kind, ctx)
     if not ref:
+        if kind == "follow":
+            # 부대 선두 자신은 추종할 대상이 없다 — 평범한 이동으로 처리한다.
+            return _one(e, entity, "move", catalog, ranges, ctx, fire_distance)
         step.issues.append("참조 대상 없음")
-        return step
+        return [step]
 
     fire = FIRE_KIND.get(kind)
     if fire:
         d = fire_distance.get(e.event_id)
         if d is None:
             step.issues.append("교전 거리 미산출 — G0가 이 사격을 못 봤다")
-            return step
+            return [step]
         verdict = ranges.check(entity.entity_class, fire, d)
         if verdict not in (OK, UNVERIFIED):
             step.issues.append(
                 f"사거리 {verdict} ({d:.0f}m) — G0가 먼저 잡았어야 함")
-            return step
+            return [step]
 
     ref_kind = ctx.ref_kind(ref)
     tmpl, label = _pick_template(kind, ref_kind, entity.type_group, catalog)
@@ -103,10 +136,22 @@ def _one(e: Event, entity: EntityDef, kind: str, catalog: TaskCatalog,
         step.issues.append(
             f"템플릿 없음: kind={kind} ref_kind={ref_kind} "
             f"type_group={entity.type_group}")
-        return step
+        return [step]
     step.action_label = label
-    step.pln, step.refs = _fill(tmpl.pln, ref_kind, ref, ctx)
-    return step
+    step.pln, step.refs = _fill(tmpl.pln, ref_kind, ref, ctx,
+                                ctx.coord_of(entity.object_id))
+
+    out: list[PlanStep] = []
+    if kind == "move_slow":
+        # 보급 기동은 속도를 먼저 낮춘다(set-speed → 이동).
+        spd = catalog.get(entity.type_group, "속도 지정")
+        if spd is not None:
+            pln = spd.pln.strip().replace("(speed 27.777778)",
+                                          f"(speed {SUPPLY_SPEED_MPS:.6f})")
+            out.append(PlanStep(e.event_id, e.time_s, e.template,
+                                "set_speed", "속도 지정", pln))
+    out.append(step)
+    return out
 
 
 def _pick_template(kind: str, ref_kind: str, type_group: str,
@@ -118,9 +163,13 @@ def _pick_template(kind: str, ref_kind: str, type_group: str,
     return None, None
 
 
-def _fill(template: str, ref_kind: str, ref: str,
-          ctx: PlanContext) -> tuple[str, list[str]]:
-    """placeholder 치환. 좌표는 ECEF geocentric 미터로 넣는다."""
+def _fill(template: str, ref_kind: str, ref: str, ctx: PlanContext,
+          self_coord: Coord | None = None) -> tuple[str, list[str]]:
+    """placeholder 치환. 좌표는 ECEF geocentric 미터로 넣는다.
+
+    X Y Z    = 참조 대상의 좌표
+    SX SY SZ = 이 객체 자신의 좌표(find_cover의 StartingLocation)
+    """
     out, refs = template.strip(), []
     needs_uuid = any(tok in out for tok in
                      ("TARGET_UUID", "ENTITY_UUID", "CONTROL_POINT_UUID"))
@@ -130,6 +179,9 @@ def _fill(template: str, ref_kind: str, ref: str,
         refs.append(uuid)
         for tok in ("TARGET_UUID", "ENTITY_UUID", "CONTROL_POINT_UUID"):
             out = out.replace(tok, uuid)
+    if "SX SY SZ" in out and self_coord is not None:
+        x, y, z = self_coord.to_ecef()
+        out = out.replace("SX SY SZ", f"{x:.6f} {y:.6f} {z:.6f}")
     if "X Y Z" in out:
         x, y, z = ctx.coord_of(ref).to_ecef()
         out = out.replace("X Y Z", f"{x:.6f} {y:.6f} {z:.6f}")

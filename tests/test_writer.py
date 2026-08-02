@@ -9,6 +9,7 @@ from vtmak.geometry import BattlefieldLayout
 from vtmak.parser import PatternMap, parse_scenario
 from vtmak.ranges import WeaponRanges
 from vtmak.registry import ClassMap, build_registry
+from vtmak.roster import RosterPlan, filter_events, select_roster
 from vtmak.scnx.catalog import DisCatalog, TaskCatalog
 from vtmak.scnx.gates import check_g3
 from vtmak.scnx.golden import Golden
@@ -30,8 +31,11 @@ def built():
     lay = BattlefieldLayout.load(cfg / "battlefield_layout.json")
     cm = ClassMap.load(cfg / "entity_class_map.csv")
     reg = build_registry(res.events, cm, lay.static_ids())
+    keep = select_roster(res.events, reg, RosterPlan.load(cfg / "roster.json"))
+    events = filter_events(res.events, keep)
+    reg = {o: d for o, d in reg.items() if o in keep}
     dis = DisCatalog.load(cfg / "dis_catalog.csv")
-    spec = build_spec(res.events, reg, lay, pm,
+    spec = build_spec(events, reg, lay, pm,
                       TaskCatalog.load(cfg / "task_catalog.csv"), dis,
                       WeaponRanges.load(cfg / "weapon_ranges.csv"), "battle")
     return spec, dis
@@ -68,19 +72,21 @@ def test_writes_a_scnx_with_the_required_members(written):
         assert f"{stem}{ext}" in names, ext
 
 
-def test_oob_contains_every_entity(written):
+def test_oob_contains_every_entity(written, built):
+    spec, _ = built
     with zipfile.ZipFile(written) as z:
         oob = z.read(f"{written.stem}.oob").decode("utf-8", "replace")
-    # 엔티티 328 + 통제점 23
-    assert oob.count("(local-vrf-object") == 351
+    assert oob.count("(local-vrf-object") == (len(spec.entities)
+                                              + len(spec.control_objects))
 
 
-def test_markings_are_ascii_and_within_dis_limit(written):
+def test_markings_are_ascii_and_within_dis_limit(written, built):
     # 한글 marking은 DIS 11byte 한계를 넘겨 깨지고 클릭이 안 된다.
+    spec, _ = built
     with zipfile.ZipFile(written) as z:
         oob = z.read(f"{written.stem}.oob").decode("utf-8", "replace")
     marks = re.findall(r'\(marking-text "([^"]*)"\)', oob)
-    assert len(marks) == 351
+    assert len(marks) == len(spec.entities) + len(spec.control_objects)
     for m in marks:
         assert m.isascii(), m
         assert len(m) <= 11, m
@@ -92,20 +98,24 @@ def test_markings_carry_object_ids(written):
         oob = z.read(f"{written.stem}.oob").decode("utf-8", "replace")
     marks = set(re.findall(r'\(marking-text "([^"]*)"\)', oob))
     assert "FRINF001" in marks
-    assert "ENCAESAR003" in marks
+    assert "ENCAESAR001" in marks
 
 
-def test_omp_lists_every_object(written):
+def test_omp_lists_every_object(written, built):
+    spec, _ = built
     with zipfile.ZipFile(written) as z:
         omp = z.read(f"{written.stem}.omp").decode("utf-8", "replace")
-    assert omp.count("(map-entry") == 351
+    assert omp.count("(map-entry") == (len(spec.entities)
+                                       + len(spec.control_objects))
 
 
 def test_pln_blocks_are_balanced_and_reference_entities(written, built):
     spec, _ = built
     with zipfile.ZipFile(written) as z:
         pln = z.read(f"{written.stem}.pln").decode("utf-8", "replace")
-    assert pln.count(pln[:0] + "(Plan \n") == 326   # 플랜 보유 객체 수
+    planned = sum(1 for v in spec.entity_plans.values()
+                  if any(s.pln for s in v))
+    assert pln.count("(Plan ") == planned
     assert pln.count("(") == pln.count(")")
     uuids = {e.uuid for e in spec.entities}
     for name in re.findall(r'\(plan-name  "VRF_UUID:([^"]+)"\)', pln):

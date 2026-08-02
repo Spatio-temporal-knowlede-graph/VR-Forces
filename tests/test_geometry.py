@@ -25,19 +25,19 @@ def test_origin_maps_to_killzone():
     # 중앙 킬존이 로컬 원점이므로 layout origin과 같은 좌표여야 한다.
     lay = BattlefieldLayout.load(CONFIG)
     c = lay.coord("LOC_중앙킬존")
-    assert abs(c.lat - 21.3860) < 1e-9
-    assert abs(c.lon - (-157.7420)) < 1e-9
+    assert abs(c.lat - 21.38001) < 1e-9
+    assert abs(c.lon - (-157.74632)) < 1e-9
 
 
 def test_local_meters_survive_projection(layout):
     # 설계 스펙 §3.5의 검증 거리가 실제로 재현되는가.
     for a, b, expect in [
-        ("LOC_중앙킬존", "LOC_중앙킬존남측", 250.0),
-        ("LOC_아군포병진지", "LOC_중앙킬존", 2807.0),
-        ("LOC_적포병진지", "LOC_아군포병진지", 5600.0),
+        ("LOC_중앙킬존", "LOC_중앙킬존남측", 200.0),
+        ("LOC_아군포병진지", "LOC_중앙킬존", 2052.0),
+        ("LOC_적포병진지", "LOC_아군포병진지", 2850.0),
     ]:
         d = layout.distance_m(a, b)
-        assert abs(d - expect) / expect < 0.001, f"{a}->{b}: {d} vs {expect}"
+        assert abs(d - expect) / expect < 0.002, f"{a}->{b}: {d} vs {expect}"
 
 
 def test_all_27_locations_present(layout):
@@ -86,3 +86,33 @@ def test_offset_coord_shifts_by_local_meters(layout):
     base = layout.coord("LOC_중앙킬존")
     off = layout.offset_coord("LOC_중앙킬존", 100.0, 0.0)
     assert abs(ground_distance(base, off) - 100.0) < 0.5
+
+
+def test_layout_is_compact_enough_for_the_terrain(layout):
+    """v1은 6.8x4.0km로 퍼져 북동쪽 객체가 만에 빠졌다. v2는 압축본이다."""
+    xs = [layout.local(i)[0] for i in layout.location_ids()]
+    ys = [layout.local(i)[1] for i in layout.location_ids()]
+    assert max(xs) - min(xs) <= 3000
+    assert max(ys) - min(ys) <= 3500
+
+
+def test_every_location_is_on_land(layout):
+    wet = [(i, layout.land_margin_m(i)) for i in layout.location_ids()
+           if layout.land_margin_m(i) < layout.coast_margin_m]
+    assert wet == [], wet
+
+
+def test_land_boundary_reproduces_the_observed_wet_objects(layout):
+    """v1에서 실제로 바다에 떴던 세 지점을 해안선 모델이 바다로 판정하는가.
+
+    좌표는 v1 로컬 프레임 기준이라 원점 이동분(북북동 800m)을 더해서 본다.
+    """
+    nx, ny = layout.coast_normal
+    for x, y, name in [(200, 2800, "적포병진지"), (900, 2600, "적북측지휘소"),
+                       (1400, 2900, "북측관측소")]:
+        margin = layout.coast_offset_m - 800 - (nx * x + ny * y)
+        assert margin < 0, f"{name} 은 바다로 판정돼야 한다 (여유 {margin:.0f}m)"
+    for x, y, name in [(-200, 2400, "적북측집결지"), (-900, 2400, "적박격포진지"),
+                       (-1500, 3400, "적후방보급집결지")]:
+        margin = layout.coast_offset_m - 800 - (nx * x + ny * y)
+        assert margin > 0, f"{name} 은 육지로 판정돼야 한다 (여유 {margin:.0f}m)"

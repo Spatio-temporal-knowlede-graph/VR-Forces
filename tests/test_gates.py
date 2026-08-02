@@ -86,13 +86,26 @@ def test_g0_catches_shrunk_layout(env):
     assert any(x.code == "C0.1" for x in hard)
 
 
-def test_g0_scale_lower_bound_is_about_071(env):
-    """설계 스펙 §3.5가 주장하는 축소 하한을 실제로 확인한다."""
+def test_v2_layout_has_no_shrink_headroom_left(env):
+    """v2는 사거리 제약에서 역산한 최소 배치라 더 줄일 여지가 없다.
+
+    포병-킬존이 2052m로 최소사거리 2000m 바로 위다. scale을 조금만 내려도
+    G0가 막는다. 즉 scale은 더 이상 축소 손잡이가 아니다.
+    """
     res, lay, _, wr, reg = env
     try:
-        lay.scale = 0.75
-        assert blocking(check_g0(res.events, reg, lay, wr)) == []
-        lay.scale = 0.70
+        lay.scale = 0.95
         assert blocking(check_g0(res.events, reg, lay, wr)) != []
     finally:
         lay.scale = 1.0
+
+
+def test_g0_blocks_when_a_location_goes_into_the_sea(env):
+    res, lay, _, wr, reg = env
+    saved = lay._local["LOC_적포병진지"]
+    lay._local["LOC_적포병진지"] = (1400, 2900)   # v1에서 실제로 물에 떴던 자리
+    try:
+        v = check_g0(res.events, reg, lay, wr)
+    finally:
+        lay._local["LOC_적포병진지"] = saved
+    assert any(x.code == "C0.5" for x in blocking(v)), [x.detail for x in v]

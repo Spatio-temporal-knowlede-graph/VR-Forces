@@ -1,0 +1,5 @@
+{
+  "note": "객체 명부 감축. 원문 335객체를 그대로 넣으면 VR-Forces가 버벅인다. 교전 유형(공격자부대→표적부대) 21종은 전부 보존하고, 유형별로 engagement_ratio만큼 쌍을 남긴 뒤 남은 예산을 비교전 객체에 부대별 비례로 배분한다. target_objects를 올리면 그대로 늘어난다(335가 상한, 감축 없음).",
+  "target_objects": 150,
+  "engagement_ratio": 0.4
+}

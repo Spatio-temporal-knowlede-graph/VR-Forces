@@ -186,6 +186,29 @@ def engagement_pairs(events: list[Event], registry: dict[str, EntityDef],
     return out
 
 
+def check_land(layout: BattlefieldLayout,
+               used_locations: set[str]) -> list[Violation]:
+    """지명이 해안선 안쪽에 있는가.
+
+    v1에서 북동쪽 지명 3곳이 카네오헤 만에 들어가 객체가 바다에 떴다
+    (EN-CAESAR·EN-CMD·EN-SNP 16객체). 그 관측으로 해안선을 역산해
+    이제는 .scnx를 만들기 전에 잡는다.
+    """
+    out: list[Violation] = []
+    for lid in sorted(used_locations):
+        m = layout.land_margin_m(lid)
+        if m is None:
+            continue
+        if m < 0:
+            out.append(Violation("G0", "C0.5",
+                                 f"{lid} 해안선 밖 {-m:.0f}m — 바다에 배치된다"))
+        elif m < layout.coast_margin_m:
+            out.append(Violation("G0", "C0.6",
+                                 f"{lid} 해안선까지 {m:.0f}m — 여유 부족"
+                                 f"(요구 {layout.coast_margin_m:.0f}m)", REPORT))
+    return out
+
+
 def check_g0(events: list[Event], registry: dict[str, EntityDef],
              layout: BattlefieldLayout,
              ranges: WeaponRanges) -> list[Violation]:
@@ -210,4 +233,9 @@ def check_g0(events: list[Event], registry: dict[str, EntityDef],
         elif verdict == NO_WEAPON:
             out.append(Violation("G0", "C0.4",
                                  f"{where} — 사격 능력 없는 모델", REPORT))
-    return out
+    used = {d.initial_location for d in registry.values() if d.initial_location}
+    for e in events:
+        for lid in (e.location, e.src, e.dst):
+            if lid:
+                used.add(lid)
+    return out + check_land(layout, used)

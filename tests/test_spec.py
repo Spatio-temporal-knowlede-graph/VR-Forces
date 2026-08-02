@@ -6,6 +6,7 @@ from vtmak.geometry import BattlefieldLayout
 from vtmak.parser import PatternMap, parse_scenario
 from vtmak.ranges import WeaponRanges
 from vtmak.registry import ClassMap, build_registry
+from vtmak.roster import RosterPlan, filter_events, select_roster
 from vtmak.scnx.catalog import DisCatalog, TaskCatalog
 from vtmak.scnx.plan import balanced
 from vtmak.scnx.spec import build_spec
@@ -22,7 +23,11 @@ def _build():
     lay = BattlefieldLayout.load(cfg / "battlefield_layout.json")
     cm = ClassMap.load(cfg / "entity_class_map.csv")
     reg = build_registry(res.events, cm, lay.static_ids())
-    return build_spec(res.events, reg, lay, pm,
+    # 파이프라인과 같게 명부를 감축한다(02_parse_events.py와 동일).
+    keep = select_roster(res.events, reg, RosterPlan.load(cfg / "roster.json"))
+    events = filter_events(res.events, keep)
+    reg = {o: d for o, d in reg.items() if o in keep}
+    return build_spec(events, reg, lay, pm,
                       TaskCatalog.load(cfg / "task_catalog.csv"),
                       DisCatalog.load(cfg / "dis_catalog.csv"),
                       WeaponRanges.load(cfg / "weapon_ranges.csv"),
@@ -36,7 +41,7 @@ def spec():
 
 def test_entities_exclude_static_objects(spec):
     ids = {e.object_id for e in spec.entities}
-    assert len(ids) == 328
+    assert len(ids) == 143
     assert "EN-FP-001" not in ids
     assert "OBJ-009" not in ids
 
@@ -89,11 +94,64 @@ def test_artillery_can_move(spec):
 
 
 def test_infantry_direct_fire_targets_an_entity(spec):
-    steps = [s for s in spec.entity_plans["FR-INF-001"] if s.pln]
-    fire = [s for s in steps if "fire-at-target" in s.pln]
+    """제압으로 끝나지 않는 직접사격은 fire-at-target으로 남는다."""
+    fire = [s for steps in spec.entity_plans.values() for s in steps
+            if s.pln and "fire-at-target" in s.pln]
     assert fire
     assert fire[0].refs
     assert f'"VRF_UUID:{fire[0].refs[0]}"' in fire[0].pln
+
+
+def test_suppressive_fire_replaces_plain_fire_when_target_is_suppressed(spec):
+    """원문의 사격→피격→제압 3문장을 이어붙여 제압사격으로 저작한다."""
+    sup = [s for steps in spec.entity_plans.values() for s in steps
+           if s.pln and "provide_suppressive_fire_loc" in s.pln]
+    assert len(sup) == 32
+    # 좌표 기반 스크립트 태스크 — uuid 참조가 없어야 한다
+    assert all(not s.refs for s in sup)
+    assert all("targetLocation" in s.pln for s in sup)
+
+
+def test_being_hit_produces_a_take_cover_task(spec):
+    cover = [s for steps in spec.entity_plans.values() for s in steps
+             if s.pln and "find_cover" in s.pln]
+    assert cover
+    for s in cover:
+        assert s.template == "hitBy"
+        assert s.refs, "Threat = 피격 원천 객체의 uuid"
+        assert "StartingLocation" in s.pln
+
+
+def test_assault_formation_move_follows_the_unit_leader(spec):
+    follow = [(oid, s) for oid, steps in spec.entity_plans.items()
+              for s in steps if s.pln and "follow-entity" in s.pln]
+    assert follow
+    leaders = {s.refs[0] for _, s in follow}
+    uuids = {e.uuid: e.object_id for e in spec.entities}
+    assert leaders <= set(uuids), "추종 대상이 실제 엔티티여야 한다"
+    for oid, s in follow:
+        assert uuids[s.refs[0]] != oid, "자기 자신을 추종하면 안 된다"
+
+
+def test_supply_move_sets_speed_first(spec):
+    for steps in spec.entity_plans.values():
+        for i, s in enumerate(steps):
+            if s.task_kind == "move_slow":
+                assert i > 0 and steps[i - 1].task_kind == "set_speed"
+                assert "(speed 8.000000)" in steps[i - 1].pln
+
+
+def test_task_type_variety(spec):
+    import re
+    kinds = set()
+    for steps in spec.entity_plans.values():
+        for s in steps:
+            if s.pln:
+                m = re.search(r'task-type "([^"]+)"|'
+                              r'set-data-request-type "([^"]+)"', s.pln)
+                kinds.add(m.group(1) or m.group(2))
+    # 확장 전에는 4종뿐이었다
+    assert len(kinds) >= 8, sorted(kinds)
 
 
 def test_aim_produces_no_task(spec):

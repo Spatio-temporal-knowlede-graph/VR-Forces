@@ -19,6 +19,8 @@ from vtmak.geometry import BattlefieldLayout                      # noqa: E402
 from vtmak.parser import PatternMap, parse_scenario               # noqa: E402
 from vtmak.ranges import WeaponRanges                             # noqa: E402
 from vtmak.registry import ClassMap, build_registry               # noqa: E402
+from vtmak.roster import (RosterPlan, filter_events,              # noqa: E402
+                          select_roster, unit_of)
 
 CONFIG = ROOT / "config"
 SRC = ROOT / "scenario_original" / "scenario_v3.txt"
@@ -32,7 +34,18 @@ def main() -> int:
     ranges = WeaponRanges.load(CONFIG / "weapon_ranges.csv")
 
     result = parse_scenario(SRC.read_text(encoding="utf-8"), pmap)
-    registry = build_registry(result.events, cmap, layout.static_ids())
+    full_registry = build_registry(result.events, cmap, layout.static_ids())
+    print(f"문장 {result.sentence_count} · 이벤트 {len(result.events)} · "
+          f"객체 {len(full_registry)}")
+
+    # 명부 감축 — VR-Forces 성능을 위해 부대별로 솎는다(교전 구조는 보존).
+    plan = RosterPlan.load(CONFIG / "roster.json")
+    keep = select_roster(result.events, full_registry, plan)
+    result.events = filter_events(result.events, keep)
+    registry = {o: d for o, d in full_registry.items() if o in keep}
+    units = len({unit_of(o) for o in keep})
+    print(f"명부 감축 → 객체 {len(registry)} ({units}개 부대) · "
+          f"이벤트 {len(result.events)}")
 
     OUT.mkdir(parents=True, exist_ok=True)
     with open(OUT / "battle.jsonl", "w", encoding="utf-8", newline="\n") as f:
@@ -40,9 +53,7 @@ def main() -> int:
             f.write(json.dumps(e.to_json(), ensure_ascii=False) + "\n")
 
     taskable = sum(1 for d in registry.values() if d.taskable)
-    print(f"문장 {result.sentence_count} · 이벤트 {len(result.events)} · "
-          f"객체 {len(registry)} (task 가능 {taskable} / 정적 "
-          f"{len(registry) - taskable})")
+    print(f"  task 가능 {taskable} / 정적 {len(registry) - taskable}")
 
     violations = check_g1(result, layout, registry) + check_g0(
         result.events, registry, layout, ranges)
