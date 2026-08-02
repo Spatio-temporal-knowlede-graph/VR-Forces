@@ -1,0 +1,27 @@
+entity_class,type_group,weapons,note
+US Army M4,보병 - 소총(M4 계열),M4 rifle,
+Russian Soldier AK47,보병 - 소총(M4 계열),M4 rifle,golden에서 AK47 무기명이 M4 rifle로 노출됨
+Russian Soldier Sniper-127,보병 - 소총(M4 계열),M4 rifle,
+US Army XM107,보병 - 소총(M4 계열),M4 rifle,
+Turkish Soldier RPG,보병 - RPG 계열,Handheld RPG Launcher,
+US Army Javelin,보병 - RPG 계열,Handheld RPG Launcher,
+Russian Soldier SA7,보병 - RPG 계열,Handheld RPG Launcher,신규 — MANPADS를 휴대 발사기로 취급
+T-69 MBT,차량/장갑차 - M2HB 계열,M2HB Machine Gun,
+T-72 MBT,차량/장갑차 - M2HB 계열,M2HB Machine Gun,
+T-80 MBT,차량/장갑차 - M2HB 계열,M2HB Machine Gun,
+M1A2 Abrams MBT,차량/장갑차 - M2HB 계열,M2HB Machine Gun,신규
+BTR-60 APC,차량/장갑차 - M2HB 계열,M2HB Machine Gun,
+BTR-80 APC,차량/장갑차 - M2HB 계열,M2HB Machine Gun,
+LAV III APC,차량/장갑차 - M2HB 계열,M2HB Machine Gun,
+M113 APC,차량/장갑차 - M2HB 계열,M2HB Machine Gun,
+ZPU-4 AA Gun,차량/장갑차 - M2HB 계열,M2HB Machine Gun,
+GAZ-66 Truck,차량/장갑차 - M2HB 계열,,비무장
+M35 Truck,차량/장갑차 - M2HB 계열,,비무장
+M1028 FMTV Canvas Cargo Truck,차량/장갑차 - M2HB 계열,,비무장
+M1083A1 FMTV Flatbed Truck,차량/장갑차 - M2HB 계열,,비무장
+MO-120RT-61 Mortar,포병 - 박격포(m9333he 계열),Indirect-Fire-Gun:m9333he,
+M109 Howitzer,포병 - 155mm 자주포,Indirect-Fire-Gun:M107-155mm,
+AHS Krab Howitzer,포병 - 155mm 자주포,Indirect-Fire-Gun:M107-155mm,
+CAESAR SP Howitzer,포병 - 155mm 자주포,Indirect-Fire-Gun:M107-155mm,
+M901 Patriot Launcher,미분류,,무기체계 미확정 — 태스크 생성 안 함. G0/G2가 보고 (설계 스펙 §8.3)
+MIM-104 Patriot Launcher,미분류,,무기체계 미확정 — 태스크 생성 안 함. G0/G2가 보고 (설계 스펙 §8.3)
