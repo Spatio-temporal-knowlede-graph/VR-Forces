@@ -1,0 +1,148 @@
+"""이벤트 → VR-Forces PLN(Task/Set) 블록.
+
+선행 프로젝트와 세 가지가 다르다.
+1) 사거리 상수를 코드에 두지 않는다. WeaponRanges가 판정한다.
+2) '지점 사격 → 근처 적 객체로 승격'을 하지 않는다. 원문이 모든 사격에
+   목표 객체를 명시하므로 추측할 필요가 없다.
+3) task_kind를 코드가 아니라 pattern_map.csv에서 읽는다.
+
+무기 이름은 치환하지 않는다. task_catalog의 템플릿이 type_group별로 이미
+검증된 무기명을 담고 있고, 그게 VR-Forces에서 실제로 도는 값이다.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Protocol
+
+from ..geometry import Coord
+from ..parser import Event, PatternMap
+from ..ranges import OK, UNVERIFIED, WeaponRanges
+from ..registry import EntityDef
+from .catalog import TaskCatalog
+
+# (task_kind, ref_kind) → task_catalog '행동' 후보. 앞에서부터 type_group에
+# 존재하는 첫 템플릿을 쓴다. 라벨은 task_catalog.csv '행동' 컬럼과 일치해야 한다.
+LABEL_CANDIDATES: dict[tuple[str, str], list[str]] = {
+    ("move", "COORD"): ["좌표로 이동", "통제점으로 이동"],
+    ("move", "ENTITY"): ["좌표로 이동", "통제점으로 이동"],
+    ("fire_direct", "ENTITY"): ["대상 직접사격", "대상 자동무장 사격"],
+    ("fire_direct", "COORD"): ["대상 직접사격"],
+    ("fire_indirect", "COORD"): ["좌표 대상 간접사격"],
+    ("fire_indirect", "ENTITY"): ["Entity 대상 간접사격", "좌표 대상 간접사격"],
+    ("aim", "ENTITY"): ["객체 조준"],
+    ("aim", "COORD"): ["객체 조준"],
+}
+
+# task_kind → 사거리 종류. noop/move는 사거리 검사 대상이 아니다.
+FIRE_KIND = {"fire_direct": "direct", "fire_indirect": "indirect",
+             "aim": "indirect"}
+
+
+class PlanContext(Protocol):
+    """spec.py가 주입하는 uuid·좌표·ref_kind 해석기."""
+    def entity_uuid(self, object_id: str) -> str | None: ...
+    def ref_uuid(self, ref: str) -> str: ...
+    def coord_of(self, ref: str) -> Coord: ...
+    def ref_kind(self, ref: str) -> str: ...   # ENTITY | COORD
+
+
+@dataclass
+class PlanStep:
+    event_id: str
+    time_s: int
+    template: str
+    task_kind: str
+    action_label: str | None
+    pln: str | None
+    refs: list[str] = field(default_factory=list)
+    issues: list[str] = field(default_factory=list)
+
+
+def build_entity_plan(events: list[Event], entity: EntityDef,
+                      pattern_map: PatternMap, catalog: TaskCatalog,
+                      ranges: WeaponRanges, ctx: PlanContext,
+                      fire_distance: dict[str, float]) -> list[PlanStep]:
+    """fire_distance는 gates.engagement_pairs가 계산한 {event_id: 거리 m}.
+
+    사거리 거리를 여기서 다시 계산하지 않는다. 교전 시점의 위치를 푸는
+    로직(피격 문장 우선, 이동 추적)이 두 벌 있으면 반드시 어긋난다.
+    """
+    steps: list[PlanStep] = []
+    for e in sorted(events, key=lambda x: (x.time_s, x.event_id)):
+        kind = pattern_map.task_kind(e.template, e.action_label)
+        if kind in ("", "noop"):
+            continue
+        steps.append(_one(e, entity, kind, catalog, ranges, ctx, fire_distance))
+    return steps
+
+
+def _one(e: Event, entity: EntityDef, kind: str, catalog: TaskCatalog,
+         ranges: WeaponRanges, ctx: PlanContext,
+         fire_distance: dict[str, float]) -> PlanStep:
+    step = PlanStep(e.event_id, e.time_s, e.template, kind, None, None)
+    ref = e.target or e.dst
+    if not ref:
+        step.issues.append("참조 대상 없음")
+        return step
+
+    fire = FIRE_KIND.get(kind)
+    if fire:
+        d = fire_distance.get(e.event_id)
+        if d is None:
+            step.issues.append("교전 거리 미산출 — G0가 이 사격을 못 봤다")
+            return step
+        verdict = ranges.check(entity.entity_class, fire, d)
+        if verdict not in (OK, UNVERIFIED):
+            step.issues.append(
+                f"사거리 {verdict} ({d:.0f}m) — G0가 먼저 잡았어야 함")
+            return step
+
+    ref_kind = ctx.ref_kind(ref)
+    tmpl, label = _pick_template(kind, ref_kind, entity.type_group, catalog)
+    if tmpl is None:
+        step.issues.append(
+            f"템플릿 없음: kind={kind} ref_kind={ref_kind} "
+            f"type_group={entity.type_group}")
+        return step
+    step.action_label = label
+    step.pln, step.refs = _fill(tmpl.pln, ref_kind, ref, ctx)
+    return step
+
+
+def _pick_template(kind: str, ref_kind: str, type_group: str,
+                   catalog: TaskCatalog):
+    for label in LABEL_CANDIDATES.get((kind, ref_kind), []):
+        t = catalog.get(type_group, label)
+        if t is not None:
+            return t, label
+    return None, None
+
+
+def _fill(template: str, ref_kind: str, ref: str,
+          ctx: PlanContext) -> tuple[str, list[str]]:
+    """placeholder 치환. 좌표는 ECEF geocentric 미터로 넣는다."""
+    out, refs = template.strip(), []
+    needs_uuid = any(tok in out for tok in
+                     ("TARGET_UUID", "ENTITY_UUID", "CONTROL_POINT_UUID"))
+    if needs_uuid:
+        uuid = (ctx.entity_uuid(ref) if ref_kind == "ENTITY" else None) \
+            or ctx.ref_uuid(ref)
+        refs.append(uuid)
+        for tok in ("TARGET_UUID", "ENTITY_UUID", "CONTROL_POINT_UUID"):
+            out = out.replace(tok, uuid)
+    if "X Y Z" in out:
+        x, y, z = ctx.coord_of(ref).to_ecef()
+        out = out.replace("X Y Z", f"{x:.6f} {y:.6f} {z:.6f}")
+    return out, refs
+
+
+def balanced(pln: str) -> bool:
+    depth = 0
+    for ch in pln:
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth < 0:
+                return False
+    return depth == 0

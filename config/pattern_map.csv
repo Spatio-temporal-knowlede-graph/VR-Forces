@@ -4,7 +4,7 @@ moveTo,template,moveTo,move,행동별로 술어가 갈린다 (아래 move_action
 stopAt,template,stopAt,noop,정지 — wait task 없음
 stayAt,template,occupy,noop,피격 후 잔류
 directFireAt,template,directFireAt,fire_direct,
-aimAt,template,aimAt,aim,포신 정렬
+aimAt,template,aimAt,noop,포신 정렬 — VR-Forces ffe-* 태스크가 조준까지 처리하므로 별도 태스크 없음. 사거리는 G0가 별도로 검사
 indirectFireAt,template,indirectFireAt,fire_indirect,
 hitBy,template,hitBy,noop,피격 — 결과 상태로 표현
 hitArea,template,hitArea,noop,주변 탄착
