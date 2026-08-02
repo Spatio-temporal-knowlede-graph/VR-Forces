@@ -1,0 +1,188 @@
+(address-map 
+   (object-map 
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:0079950f-7382-1943-8e88-c0e4eaf4436e")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:0378c034-0d6a-9747-ad29-4073cd1cee99")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:0be39199-89ff-084a-a855-398df876cf01")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:12d63cce-1ce8-e14c-ad83-37f01d0e04cd")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:337213dd-45fb-2944-b419-7c1881a9d941")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:340ad04c-8178-934d-93a9-bdb503aa77fd")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:38ad87c8-5379-3043-93aa-b7bd91258837")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:3d44082a-ca33-b943-96a3-223f5e60af3b")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:3e294d69-b104-4144-8b7a-ad75cc32401a")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:3ef9a244-4bfd-6848-90be-7ca98377b27c")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:4084618b-40f7-1149-84dd-83d913d926e5")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:48e0aec9-79f7-cc47-9448-e6c77ff7ec33")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:4a673066-dba6-0a4f-83a3-14ca0dda2ca2")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:562965d8-9af6-d543-9dc4-a4d33c72eb52")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:5a49d552-78f0-814a-ba77-211f9678bbae")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:674b7a80-9fa8-6944-82b4-11c29a5308da")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:6e42b544-4ddf-5e42-9240-ed92a023c7b7")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:712bf491-613c-674d-a58d-4b49c4f3b617")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:74b32bfc-288a-ad4d-8ce0-ff98fee80c32")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:79e54467-d045-494e-93f6-d843a77c1108")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:824a9857-4570-044a-9e50-05efaaf2704b")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:85236312-89df-d649-b171-39f7305042a6")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:8a5f0acd-5c03-ec4d-bd11-75933cefaddf")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:92446c8e-a217-244a-8d28-3465fc5d301a")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:98ff43cf-6dc2-3d4c-91cb-d17e53411511")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:9993407c-40af-3f48-bacb-35c1eab1513a")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:b553e230-ae66-0b43-9800-6057b1262b88")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:bc145447-632c-6342-a2ce-0a0887aefd14")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:c3754f7b-977e-b742-8611-d7dba7128511")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:c94fe920-a1d7-9940-8811-b36427542481")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:c9d32939-819b-8840-86ce-2fc6d8cc3395")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:ca2de33e-08ea-3940-8107-f70dd9649994")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:ca5aa940-181e-5f4d-88ca-150a705902f9")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:ccb51549-3614-7647-920d-e92f8e464194")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:d1f0133a-c235-9842-9c12-8e1c855b3e00")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:df180f05-cc5f-ea4e-acc9-074bf014ca20")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:df431650-684d-e941-a5ca-c940c53eb971")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:e5ba84b5-5dad-f24b-be50-f47a74c028be")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:ed1881b2-0494-c648-9fc5-86d94469b138")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:f25e028e-21d4-6d4e-adb5-7e6498f108e3")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:f42b657c-1d9f-724b-bdfb-55269ad78501")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:fa6bc746-4ea4-7f4f-906d-60aa324ab6e6")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:fb91d058-146e-0840-96f4-e6053fb70db8")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:fc77ec05-f65f-8646-9530-d563ea396bd3")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:fe06d900-8cef-d84b-9321-a29f726cb7a4")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:fe710473-e42a-4a4a-bcdf-856b60167725")
+      )
+   )
+)

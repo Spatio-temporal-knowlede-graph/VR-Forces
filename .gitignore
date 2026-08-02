@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 .pytest_cache/
 yewon_test/*.scnx
+VR-Forces catalog/
