@@ -1,0 +1,87 @@
+from pathlib import Path
+
+import pytest
+
+from vtmak.scnx.catalog import DisCatalog, TaskCatalog
+from vtmak.scnx.golden import Golden
+from vtmak.scnx.ids import IdAllocator
+
+ROOT = Path(__file__).resolve().parents[1]
+GOLDEN = ROOT / "yewon_test" / "yewon_test.scnx"
+
+# 시나리오가 쓰는 26종 — dis_catalog와 golden 양쪽에 다 있어야 한다.
+SCENARIO_CLASSES = [
+    "US Army M4", "Russian Soldier AK47", "Russian Soldier SA7",
+    "Russian Soldier Sniper-127", "US Army XM107", "Turkish Soldier RPG",
+    "US Army Javelin", "T-69 MBT", "T-72 MBT", "T-80 MBT",
+    "M1A2 Abrams MBT", "BTR-60 APC", "BTR-80 APC", "LAV III APC",
+    "M113 APC", "ZPU-4 AA Gun", "GAZ-66 Truck", "M35 Truck",
+    "M1028 FMTV Canvas Cargo Truck", "M1083A1 FMTV Flatbed Truck",
+    "MO-120RT-61 Mortar", "M109 Howitzer", "AHS Krab Howitzer",
+    "CAESAR SP Howitzer", "M901 Patriot Launcher",
+    "MIM-104 Patriot Launcher",
+]
+
+
+@pytest.fixture(scope="module")
+def dis():
+    return DisCatalog.load(ROOT / "config" / "dis_catalog.csv")
+
+
+def test_id_allocator_is_deterministic():
+    a = IdAllocator("battle")
+    b = IdAllocator("battle")
+    assert a.alloc("entity", "FR-INF-001") == b.alloc("entity", "FR-INF-001")
+    assert a.alloc("entity", "FR-INF-001") != a.alloc("entity", "FR-INF-002")
+
+
+def test_dis_catalog_resolves_hyphen_variants(dis):
+    # 원문 'T-72 MBT' ↔ dis_catalog 'T 72 MBT'
+    assert dis.dis("T-72 MBT") == dis.dis("T 72 MBT")
+    assert dis.dis("MO-120RT-61 Mortar") is not None
+
+
+def test_dis_catalog_covers_scenario_classes(dis):
+    missing = [c for c in SCENARIO_CLASSES if dis.dis(c) is None]
+    assert missing == []
+
+
+def test_task_catalog_has_expected_type_groups():
+    tc = TaskCatalog.load(ROOT / "config" / "task_catalog.csv")
+    for tg in ["보병 - 소총(M4 계열)", "보병 - RPG 계열",
+               "차량/장갑차 - M2HB 계열", "포병 - 155mm 자주포",
+               "포병 - 박격포(m9333he 계열)"]:
+        assert tc.labels_for(tg), tg
+
+
+def test_task_catalog_has_the_templates_the_plan_needs():
+    tc = TaskCatalog.load(ROOT / "config" / "task_catalog.csv")
+    assert tc.get("보병 - 소총(M4 계열)", "대상 직접사격") is not None
+    assert tc.get("포병 - 155mm 자주포", "좌표 대상 간접사격") is not None
+    assert tc.get("포병 - 박격포(m9333he 계열)", "좌표 대상 간접사격") is not None
+    assert tc.get("차량/장갑차 - M2HB 계열", "통제점으로 이동") is not None
+    assert tc.get("보병 - 소총(M4 계열)", "좌표로 이동") is not None
+
+
+def test_golden_has_a_record_for_every_scenario_dis(dis):
+    g = Golden.load(GOLDEN)
+    missing = [c for c in SCENARIO_CLASSES
+               if g.entity_by_dis(dis.dis(c)) is None]
+    assert missing == [], f"golden에 레코드 없는 모델: {missing}"
+
+
+def test_object_ids_fit_the_dis_marking_limit():
+    """marking은 DIS 11byte. 객체 ID에서 하이픈을 뺀 값이 들어가야 한다."""
+    import json
+    ids = set()
+    src = ROOT / "build" / "events" / "battle.jsonl"
+    if not src.exists():
+        pytest.skip("02를 먼저 실행할 것")
+    for line in src.read_text(encoding="utf-8").splitlines():
+        e = json.loads(line)
+        for k in ("actor", "target", "source_obj"):
+            if e[k]:
+                ids.add(e[k])
+    marks = [i.replace("-", "") for i in ids]
+    assert all(len(m) <= 11 and m.isascii() for m in marks)
+    assert len(set(marks)) == len(marks)

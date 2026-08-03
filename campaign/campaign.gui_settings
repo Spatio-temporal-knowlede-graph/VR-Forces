@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE boost_serialization>
+<boost_serialization signature="serialization::archive" version="14">
+<DtGuiScenarioSettingsManager class_id="0" tracking_level="0" version="0">
+	<DtObjectSettings class_id="1" tracking_level="0" version="0">
+		<count>0</count>
+		<item_version>0</item_version>
+	</DtObjectSettings>
+	<SystemScriptsAvailable class_id="2" tracking_level="0" version="0">
+		<count>0</count>
+		<item_version>0</item_version>
+	</SystemScriptsAvailable>
+	<Overlays class_id="3" tracking_level="0" version="0">
+		<count>5</count>
+		<item_version>0</item_version>
+		<item class_id="4" tracking_level="0" version="0">
+			<first>Navigation Areas</first>
+			<second class_id="5" tracking_level="0" version="1">
+				<visible>1</visible>
+				<filtered>0</filtered>
+				<locked>0</locked>
+			</second>
+		</item>
+		<item>
+			<first>OrganizedOverlay:Aircraft</first>
+			<second>
+				<visible>1</visible>
+				<filtered>0</filtered>
+				<locked>0</locked>
+			</second>
+		</item>
+		<item>
+			<first>OrganizedOverlay:Ground Vehicle</first>
+			<second>
+				<visible>1</visible>
+				<filtered>0</filtered>
+				<locked>0</locked>
+			</second>
+		</item>
+		<item>
+			<first>OrganizedOverlay:Human</first>
+			<second>
+				<visible>1</visible>
+				<filtered>0</filtered>
+				<locked>0</locked>
+			</second>
+		</item>
+		<item>
+			<first>OrganizedOverlay:Tactical Graphics</first>
+			<second>
+				<visible>1</visible>
+				<filtered>0</filtered>
+				<locked>0</locked>
+			</second>
+		</item>
+	</Overlays>
+</DtGuiScenarioSettingsManager>

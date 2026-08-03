@@ -1,0 +1,27 @@
+entity_class,type_group,weapons,note
+US Army M4,보병 - 소총(M4 계열),M4 rifle,
+Russian Soldier AK47,보병 - 소총(M4 계열),AK-47,golden .oob display-name 실측. 이전 값 'M4 rifle'은 이 모델에 없다
+Russian Soldier Sniper-127,보병 - 소총(M4 계열),AK-47,golden .oob display-name 실측. 이전 값 'M4 rifle'은 이 모델에 없다
+US Army XM107,보병 - 소총(M4 계열),M60 Machine Gun,golden .oob display-name 실측. 이전 값 'M4 rifle'은 이 모델에 없다
+Turkish Soldier RPG,보병 - RPG 계열,Handheld RPG Launcher,
+US Army Javelin,보병 - RPG 계열,Handheld RPG Launcher,
+Russian Soldier SA7,보병 - RPG 계열,Handheld RPG Launcher,신규 — MANPADS를 휴대 발사기로 취급
+T-69 MBT,차량/장갑차 - M2HB 계열,M2HB Machine Gun,
+T-72 MBT,차량/장갑차 - M2HB 계열,M2HB Machine Gun,
+T-80 MBT,차량/장갑차 - M2HB 계열,M2HB Machine Gun,
+M1A2 Abrams MBT,차량/장갑차 - M2HB 계열,120mm Gun,golden .oob display-name 실측. 이전 값 'M2HB Machine Gun'은 이 모델에 없다
+BTR-60 APC,차량/장갑차 - M2HB 계열,M2HB Machine Gun,
+BTR-80 APC,차량/장갑차 - M2HB 계열,30mm Gun,golden .oob display-name 실측. 이전 값 'M2HB Machine Gun'은 이 모델에 없다
+LAV III APC,차량/장갑차 - M2HB 계열,M2HB Machine Gun,
+M113 APC,차량/장갑차 - M2HB 계열,M2HB Machine Gun,
+ZPU-4 AA Gun,차량/장갑차 - M2HB 계열,M2HB Machine Gun,
+GAZ-66 Truck,차량/장갑차 - M2HB 계열,,비무장
+M35 Truck,차량/장갑차 - M2HB 계열,,비무장
+M1028 FMTV Canvas Cargo Truck,차량/장갑차 - M2HB 계열,,비무장
+M1083A1 FMTV Flatbed Truck,차량/장갑차 - M2HB 계열,,비무장
+MO-120RT-61 Mortar,포병 - 박격포(m9333he 계열),Indirect-Fire-Gun:m9333he,
+M109 Howitzer,포병 - 155mm 자주포,Indirect-Fire-Gun:M107-155mm,
+AHS Krab Howitzer,포병 - 155mm 자주포,Indirect-Fire-Gun:M107-155mm,
+CAESAR SP Howitzer,포병 - 155mm 자주포,Indirect-Fire-Gun:M107-155mm,
+M901 Patriot Launcher,미사일 발사대 - Patriot,Patriot Missile Launcher,"golden .oob 실측. type_group은 태스크 템플릿을 고르는 키다 — 전용 그룹을 둬야 이동·간접사격을 다 받는다. 차량 그룹에 넣으면 다른 차량까지 간접사격 템플릿을 갖고, 미분류면 이동조차 못 한다. 지상 간접사격 성립 여부(설계 스펙 §8.3)는 weapon_ranges.csv의 unverified=1이 계속 붙잡는다."
+MIM-104 Patriot Launcher,미사일 발사대 - Patriot,Patriot Missile Launcher,"golden .oob 실측. type_group은 태스크 템플릿을 고르는 키다 — 전용 그룹을 둬야 이동·간접사격을 다 받는다. 차량 그룹에 넣으면 다른 차량까지 간접사격 템플릿을 갖고, 미분류면 이동조차 못 한다. 지상 간접사격 성립 여부(설계 스펙 §8.3)는 weapon_ranges.csv의 unverified=1이 계속 붙잡는다."
