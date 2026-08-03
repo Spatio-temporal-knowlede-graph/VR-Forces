@@ -1,0 +1,68 @@
+from vtmak.stkg.predicate import Parsed, parse
+
+
+def test_follow_entity_yields_entity_marking():
+    p = parse('Follow-Entity Entity: "ENINF001" Offset: <-0 0 -0 >')
+    assert p == Parsed("follows", "ENINF001", "entity")
+
+
+def test_move_to_yields_coord():
+    p = parse("Move to {-5499123.141030, -2250320.406046, 2311025.754248}")
+    assert p.predicate == "moves_to"
+    assert p.object_kind == "coord"
+    assert p.object_raw == "-5499123.141030,-2250320.406046,2311025.754248"
+
+
+def test_move_to_waypoint_yields_uuid():
+    p = parse('Move-To Waypoint: "62f22b9c-d768-531d-9242-e32d8a056ee9"')
+    assert p == Parsed("moves_to", "62f22b9c-d768-531d-9242-e32d8a056ee9",
+                       "uuid")
+
+
+def test_ffe_on_location_yields_coord():
+    raw = ('FFE-On-Location "Location={-5498573.025370, -2251262.832114, '
+           '2311309.431241}"  Name of Weapons to Fire: '
+           "Indirect-Fire-Gun:m9333he. Number-Of-Rounds: 1. "
+           "Height-Above-Terrain: 0")
+    p = parse(raw)
+    assert p.predicate == "fires_at"
+    assert p.object_kind == "coord"
+    assert p.object_raw.startswith("-5498573.025370,")
+
+
+def test_target_entity_task_with_uuid():
+    p = parse("Target-entity task: 2c380775-b3d4-7144-8815-4ef6c9e202ce")
+    assert p == Parsed("engages", "2c380775-b3d4-7144-8815-4ef6c9e202ce",
+                       "uuid")
+
+
+def test_target_entity_task_with_marking():
+    """UUID가 아닌 값도 온다. 실측 24행이 'M933HE 2'였다."""
+    p = parse("Target-entity task: M933HE 2")
+    assert p == Parsed("engages", "M933HE 2", "entity")
+
+
+def test_find_cover_threat_is_a_marking_not_a_uuid():
+    raw = ("find_cover: ChooseFiringPosition=False; DistanceFromThreat=2; "
+           "FaceThreat=False; ForwardDirection=6.28318; OnlyForward=False; "
+           "Range=100; StartFrom=0; StartingLocation={-5499510.258721, "
+           "-2250984.063019, 2309459.984596}; Threat=FRINF001; "
+           "ThreatRadius=2; ")
+    assert parse(raw) == Parsed("takes_cover_from", "FRINF001", "entity")
+
+
+def test_none_is_not_a_relation():
+    assert parse("None") == Parsed("", None, "none")
+
+
+def test_suppressed_prone_is_known_but_not_a_relation():
+    """관계 어휘 11종에 없다. 파싱 실패가 아니므로 None이 아니다."""
+    assert parse("suppressed_prone") == Parsed("", None, "none")
+
+
+def test_unknown_predicate_returns_none():
+    assert parse("Completely-Unknown-Task foo=1") is None
+
+
+def test_empty_string_returns_none():
+    assert parse("") is None

@@ -25,6 +25,7 @@ python scripts/01_harvest_layout.py     # golden 통제점 → 지명 좌표
 python scripts/02_parse_events.py       # 원문 → 이벤트    (+G1 +G0)
 python scripts/03_build_timetable.py    # 이벤트 → 타임테이블 (+G2)
 python scripts/04_compile_scnx.py       # 스펙 → PLN → .scnx (+G0 +G3)
+python scripts/06_stkg_export.py        # CSV → STKG 관계·위치 테이블 (A단계)
 ```
 
 각 단계가 찍는 줄에서 **`차단 N건`의 N이 0**이어야 다음이 의미가 있다.
@@ -43,6 +44,45 @@ python scripts/04_compile_scnx.py       # 스펙 → PLN → .scnx (+G0 +G3)
 ```
 
 산출은 전부 `build/` 아래에 생기고, 같은 입력이면 항상 같은 바이트가 나온다.
+
+### 1-A. STKG A단계 (`06_stkg_export.py`)
+
+재시뮬 없이 `build/csv/*.csv`만 읽어 `build/stkg/relations.csv` ·
+`build/stkg/positions.csv` · `build/stkg/report.md`를 낸다.
+
+```bash
+python scripts/06_stkg_export.py   # CSV → STKG 관계·위치 테이블 (A단계)
+```
+
+2026-08-03 실측(`build/csv/` 5개 파일 · 130,523행):
+
+```
+입력 5개 파일 · 130,523행
+관계 구간 345 (기여 행 95,020) · 위치 31,198 · 제외 4,305 · 격리 0
+→ build/stkg
+```
+
+- 술어별: `moves_to` 285 · `follows` 38 · `fires_at` 17 · `fired_by` 4 ·
+  `takes_cover_from` 1 (`engages`·`suppresses`는 이번 CSV에 재료 없음)
+- 좌표 스냅: `location` 63,099건 (100.0%), `coord` 폴백 0건
+- `relations.csv`의 `object` 빈 행 0건, `object_type=entity` 중 `.oob` marking에
+  없는 것 0건(7종 전부 일치)
+- `fired_by`: GROUND_TRUTH 4건 관계로 확정, UAV 2의 `M933HE 1/2/3` 3건 미확정
+  (해당 시각에 정합하는 박격포가 없음)
+- 파싱 실패 술어 0건
+
+**주의 — 제외 건수가 계획서의 기대치(5,072행)와 767행 다르다.** 계획서는
+`Observer 1 1,624` + `Force 2,586` + `GlobalEnv 862` = 5,072를 기대했지만,
+실측 원인은 `GROUND_TRUTH` CSV에 `Observer 1`(857행)과 `Observer 2`(767행)
+둘 다 있는데 `vtmak/stkg/filter.py`의 `INFRA_SUBJECTS`에는 `Observer 1`만
+등록돼 있다는 것이다. `Observer 2`는 좌표가 변하는(665개 서로 다른 위치)
+행이라 `1 Force`류의 고정 쓰레기값과는 다르게 보이지만, `predicate`가 항상
+`None`이라 사실상 위치 전용 관측 플랫폼으로 추정된다. `export.py`는
+`filter.classify`를 그대로 따르므로 `Observer 2`의 767행은 제외되지 않고
+위치 테이블로 들어간다(제외 4,305 = 5,072 − 767, 위치 31,198 = 30,431 + 767 —
+정확히 767행만큼 서로 반대로 어긋나 총합은 여전히 130,523과 맞는다).
+`filter.py`는 읽기 전용 모듈이라 여기서 고치지 않았다 — `Observer 2`를
+인프라로 볼지는 확인 후 `INFRA_SUBJECTS`에 추가할지 결정할 사안이다.
 
 ---
 
