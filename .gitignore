@@ -1,4 +1,5 @@
-build/
+# build/은 추적한다. build/csv는 VR-Forces 내보내기 원본이라 스크립트로
+# 복원할 수 없고, 나머지 산출물도 같이 두어야 무엇으로 무엇이 나왔는지 남는다.
 __pycache__/
 *.pyc
 .pytest_cache/

@@ -1,0 +1,142 @@
+﻿object_id,name,faction,entity_class,type_group,marking,initial_state,n_tasks,n_dropped,t_first,t_last,kinds,sequence
+EN-BTR60-001,병력수송 장갑차 1,RED,BTR-60 APC,차량/장갑차 - M2HB 계열,ENBTR60001,대기,1,0,02:42,02:42,move×1,02:42 좌표로 이동→LOC_중앙계곡
+EN-BTR60-002,병력수송 장갑차 2,RED,BTR-60 APC,차량/장갑차 - M2HB 계열,ENBTR60002,대기,2,0,02:43,05:49,move×2,02:43 좌표로 이동→LOC_중앙계곡 | 05:49 좌표로 이동→LOC_적북측접근로
+EN-BTR60-003,병력수송 장갑차 3,RED,BTR-60 APC,차량/장갑차 - M2HB 계열,ENBTR60003,대기,2,0,02:44,05:49,move×2,02:44 좌표로 이동→LOC_중앙계곡 | 05:49 좌표로 이동→LOC_북측예비방어선
+EN-BTR60-004,병력수송 장갑차 4,RED,BTR-60 APC,차량/장갑차 - M2HB 계열,ENBTR60004,대기,2,0,02:45,05:49,move×2,02:45 좌표로 이동→LOC_중앙계곡 | 05:49 좌표로 이동→LOC_적북측접근로
+EN-BTR80-001,화력지원 장갑차 1,RED,BTR-80 APC,차량/장갑차 - M2HB 계열,ENBTR80001,대기,2,0,02:50,05:49,move×2,02:50 좌표로 이동→LOC_중앙계곡 | 05:49 좌표로 이동→LOC_북측예비방어선
+EN-BTR80-002,화력지원 장갑차 2,RED,BTR-80 APC,차량/장갑차 - M2HB 계열,ENBTR80002,대기,2,0,02:51,05:49,move×2,02:51 좌표로 이동→LOC_중앙계곡 | 05:49 좌표로 이동→LOC_적북측접근로
+EN-BTR80-003,화력지원 장갑차 3,RED,BTR-80 APC,차량/장갑차 - M2HB 계열,ENBTR80003,대기,2,0,02:52,05:50,move×2,02:52 좌표로 이동→LOC_중앙계곡 | 05:50 좌표로 이동→LOC_북측예비방어선
+EN-CAESAR-001,자주포 1,RED,CAESAR SP Howitzer,포병 - 155mm 자주포,ENCAESAR001,대기,2,0,02:16,05:51,fire_indirect×1 move×1,02:16 좌표 대상 간접사격→FR-LN-001 | 05:51 좌표로 이동→LOC_적북측접근로
+EN-CAESAR-002,자주포 2,RED,CAESAR SP Howitzer,포병 - 155mm 자주포,ENCAESAR002,대기,2,0,02:17,05:51,fire_indirect×1 move×1,02:17 좌표 대상 간접사격→FR-FP-001 | 05:51 좌표로 이동→LOC_북측예비방어선
+EN-CAESAR-003,자주포 3,RED,CAESAR SP Howitzer,포병 - 155mm 자주포,ENCAESAR003,대기,2,0,02:18,05:51,fire_indirect×1 move×1,02:18 좌표 대상 간접사격→FR-FP-002 | 05:51 좌표로 이동→LOC_적북측접근로
+EN-GAZ-001,탄약 보급차 1,RED,GAZ-66 Truck,차량/장갑차 - M2HB 계열,ENGAZ001,대기,4,0,02:57,06:34,move×2 move_slow×1 set_speed×1,02:57 좌표로 이동→LOC_적북측접근로 | 05:50 좌표로 이동→LOC_적북측접근로 | 06:34 속도 지정 | 06:34 좌표로 이동→LOC_적전방방어선후방
+EN-GAZ-002,탄약 보급차 2,RED,GAZ-66 Truck,차량/장갑차 - M2HB 계열,ENGAZ002,대기,4,0,02:58,06:35,move×2 move_slow×1 set_speed×1,02:58 좌표로 이동→LOC_적북측접근로 | 05:50 좌표로 이동→LOC_북측예비방어선 | 06:35 속도 지정 | 06:35 좌표로 이동→LOC_적전방방어선후방
+EN-INF-001,제1제대 보병 1,RED,Russian Soldier AK47,보병 - 소총(M4 계열),ENINF001,대기,2,0,01:00,03:21,move×1 take_cover×1,01:00 좌표로 이동→LOC_적북측접근로 | 03:21 피격 후 엄폐→FR-INF-001
+EN-INF-002,제1제대 보병 2,RED,Russian Soldier AK47,보병 - 소총(M4 계열),ENINF002,대기,2,0,01:00,03:22,follow×1 take_cover×1,01:00 대형 추종 이동→EN-INF-001 | 03:22 피격 후 엄폐→FR-INF-002
+EN-INF-003,제1제대 보병 3,RED,Russian Soldier AK47,보병 - 소총(M4 계열),ENINF003,대기,2,0,01:00,03:23,follow×1 take_cover×1,01:00 대형 추종 이동→EN-INF-001 | 03:23 피격 후 엄폐→FR-INF-003
+EN-INF-004,제1제대 보병 4,RED,Russian Soldier AK47,보병 - 소총(M4 계열),ENINF004,대기,2,0,01:00,03:24,follow×1 take_cover×1,01:00 대형 추종 이동→EN-INF-001 | 03:24 피격 후 엄폐→FR-INF-004
+EN-INF-005,제1제대 보병 5,RED,Russian Soldier AK47,보병 - 소총(M4 계열),ENINF005,대기,2,0,01:00,03:25,follow×1 take_cover×1,01:00 대형 추종 이동→EN-INF-001 | 03:25 피격 후 엄폐→FR-INF-005
+EN-INF-006,제1제대 보병 6,RED,Russian Soldier AK47,보병 - 소총(M4 계열),ENINF006,대기,2,0,01:00,03:26,follow×1 take_cover×1,01:00 대형 추종 이동→EN-INF-001 | 03:26 피격 후 엄폐→FR-INF-006
+EN-INF-007,제1제대 보병 7,RED,Russian Soldier AK47,보병 - 소총(M4 계열),ENINF007,대기,2,0,01:00,03:27,follow×1 take_cover×1,01:00 대형 추종 이동→EN-INF-001 | 03:27 피격 후 엄폐→FR-INF-007
+EN-INF-008,제1제대 보병 8,RED,Russian Soldier AK47,보병 - 소총(M4 계열),ENINF008,대기,2,0,01:00,03:28,follow×1 take_cover×1,01:00 대형 추종 이동→EN-INF-001 | 03:28 피격 후 엄폐→FR-INF-008
+EN-INF-009,제1제대 보병 9,RED,Russian Soldier AK47,보병 - 소총(M4 계열),ENINF009,대기,2,0,01:01,03:29,follow×1 take_cover×1,01:01 대형 추종 이동→EN-INF-001 | 03:29 피격 후 엄폐→FR-INF-009
+EN-INF-010,제1제대 보병 10,RED,Russian Soldier AK47,보병 - 소총(M4 계열),ENINF010,대기,2,0,01:01,03:30,follow×1 take_cover×1,01:01 대형 추종 이동→EN-INF-001 | 03:30 피격 후 엄폐→FR-INF-010
+EN-INF-011,제1제대 보병 11,RED,Russian Soldier AK47,보병 - 소총(M4 계열),ENINF011,대기,2,0,01:01,03:31,follow×1 take_cover×1,01:01 대형 추종 이동→EN-INF-001 | 03:31 피격 후 엄폐→FR-INF-011
+EN-INF-012,제1제대 보병 12,RED,Russian Soldier AK47,보병 - 소총(M4 계열),ENINF012,대기,2,0,01:01,03:32,follow×1 take_cover×1,01:01 대형 추종 이동→EN-INF-001 | 03:32 피격 후 엄폐→FR-INF-012
+EN-INF-013,제1제대 보병 13,RED,Russian Soldier AK47,보병 - 소총(M4 계열),ENINF013,대기,2,0,01:01,03:33,follow×1 take_cover×1,01:01 대형 추종 이동→EN-INF-001 | 03:33 피격 후 엄폐→FR-INF-013
+EN-INF-014,제1제대 보병 14,RED,Russian Soldier AK47,보병 - 소총(M4 계열),ENINF014,대기,2,0,01:01,03:34,follow×1 take_cover×1,01:01 대형 추종 이동→EN-INF-001 | 03:34 피격 후 엄폐→FR-INF-014
+EN-INF-015,제1제대 보병 15,RED,Russian Soldier AK47,보병 - 소총(M4 계열),ENINF015,대기,2,0,01:01,03:35,follow×1 take_cover×1,01:01 대형 추종 이동→EN-INF-001 | 03:35 피격 후 엄폐→FR-INF-015
+EN-INF-016,제1제대 보병 16,RED,Russian Soldier AK47,보병 - 소총(M4 계열),ENINF016,대기,2,0,01:01,03:36,follow×1 take_cover×1,01:01 대형 추종 이동→EN-INF-001 | 03:36 피격 후 엄폐→FR-INF-016
+EN-INF-017,제1제대 보병 17,RED,Russian Soldier AK47,보병 - 소총(M4 계열),ENINF017,대기,2,0,01:02,03:37,follow×1 take_cover×1,01:02 대형 추종 이동→EN-INF-001 | 03:37 피격 후 엄폐→FR-INF-017
+EN-INF-018,제1제대 보병 18,RED,Russian Soldier AK47,보병 - 소총(M4 계열),ENINF018,대기,2,0,01:02,03:38,follow×1 take_cover×1,01:02 대형 추종 이동→EN-INF-001 | 03:38 피격 후 엄폐→FR-INF-018
+EN-INF-019,제1제대 보병 19,RED,Russian Soldier AK47,보병 - 소총(M4 계열),ENINF019,대기,2,0,01:02,03:39,follow×1 take_cover×1,01:02 대형 추종 이동→EN-INF-001 | 03:39 피격 후 엄폐→FR-INF-019
+EN-INF-020,제1제대 보병 20,RED,Russian Soldier AK47,보병 - 소총(M4 계열),ENINF020,대기,2,0,01:02,03:40,follow×1 take_cover×1,01:02 대형 추종 이동→EN-INF-001 | 03:40 피격 후 엄폐→FR-INF-020
+EN-INF-021,제1제대 보병 21,RED,Russian Soldier AK47,보병 - 소총(M4 계열),ENINF021,대기,2,0,01:02,03:41,follow×1 take_cover×1,01:02 대형 추종 이동→EN-INF-001 | 03:41 피격 후 엄폐→FR-INF-021
+EN-INF-022,제1제대 보병 22,RED,Russian Soldier AK47,보병 - 소총(M4 계열),ENINF022,대기,2,0,01:02,03:42,follow×1 take_cover×1,01:02 대형 추종 이동→EN-INF-001 | 03:42 피격 후 엄폐→FR-INF-022
+EN-INF-023,제1제대 보병 23,RED,Russian Soldier AK47,보병 - 소총(M4 계열),ENINF023,대기,2,0,01:02,03:43,follow×1 take_cover×1,01:02 대형 추종 이동→EN-INF-001 | 03:43 피격 후 엄폐→FR-INF-023
+EN-INF-024,제1제대 보병 24,RED,Russian Soldier AK47,보병 - 소총(M4 계열),ENINF024,대기,2,0,01:02,03:44,follow×1 take_cover×1,01:02 대형 추종 이동→EN-INF-001 | 03:44 피격 후 엄폐→FR-INF-024
+EN-INF-025,제1제대 보병 25,RED,Russian Soldier AK47,보병 - 소총(M4 계열),ENINF025,대기,2,0,01:03,03:45,follow×1 take_cover×1,01:03 대형 추종 이동→EN-INF-001 | 03:45 피격 후 엄폐→FR-INF-025
+EN-INF-026,제1제대 보병 26,RED,Russian Soldier AK47,보병 - 소총(M4 계열),ENINF026,대기,1,0,01:03,01:03,follow×1,01:03 대형 추종 이동→EN-INF-001
+EN-INF-027,제1제대 보병 27,RED,Russian Soldier AK47,보병 - 소총(M4 계열),ENINF027,대기,1,0,01:03,01:03,follow×1,01:03 대형 추종 이동→EN-INF-001
+EN-INF-028,제1제대 보병 28,RED,Russian Soldier AK47,보병 - 소총(M4 계열),ENINF028,대기,1,0,01:03,01:03,follow×1,01:03 대형 추종 이동→EN-INF-001
+EN-INF-029,제1제대 보병 29,RED,Russian Soldier AK47,보병 - 소총(M4 계열),ENINF029,대기,1,0,01:03,01:03,follow×1,01:03 대형 추종 이동→EN-INF-001
+EN-INF-030,제1제대 보병 30,RED,Russian Soldier AK47,보병 - 소총(M4 계열),ENINF030,대기,1,0,01:03,01:03,follow×1,01:03 대형 추종 이동→EN-INF-001
+EN-INF-031,제1제대 보병 31,RED,Russian Soldier AK47,보병 - 소총(M4 계열),ENINF031,대기,1,0,01:03,01:03,follow×1,01:03 대형 추종 이동→EN-INF-001
+EN-INF-032,제1제대 보병 32,RED,Russian Soldier AK47,보병 - 소총(M4 계열),ENINF032,대기,1,0,01:03,01:03,follow×1,01:03 대형 추종 이동→EN-INF-001
+EN-INF-033,제1제대 보병 33,RED,Russian Soldier AK47,보병 - 소총(M4 계열),ENINF033,대기,1,0,01:04,01:04,follow×1,01:04 대형 추종 이동→EN-INF-001
+EN-INF-034,제1제대 보병 34,RED,Russian Soldier AK47,보병 - 소총(M4 계열),ENINF034,대기,1,0,01:04,01:04,follow×1,01:04 대형 추종 이동→EN-INF-001
+EN-INF-035,제1제대 보병 35,RED,Russian Soldier AK47,보병 - 소총(M4 계열),ENINF035,대기,1,0,01:04,01:04,follow×1,01:04 대형 추종 이동→EN-INF-001
+EN-M1A2-001,예비 전차 1,RED,M1A2 Abrams MBT,차량/장갑차 - M2HB 계열,ENM1A2001,대기,1,0,02:37,02:37,move×1,02:37 좌표로 이동→LOC_중앙계곡
+EN-M1A2-002,예비 전차 2,RED,M1A2 Abrams MBT,차량/장갑차 - M2HB 계열,ENM1A2002,대기,1,0,02:38,02:38,move×1,02:38 좌표로 이동→LOC_중앙계곡
+EN-M1A2-003,예비 전차 3,RED,M1A2 Abrams MBT,차량/장갑차 - M2HB 계열,ENM1A2003,대기,1,0,02:39,02:39,move×1,02:39 좌표로 이동→LOC_중앙계곡
+EN-M35-001,병력 수송 트럭 1,RED,M35 Truck,차량/장갑차 - M2HB 계열,ENM35001,대기,4,0,03:01,06:38,move×2 move_slow×1 set_speed×1,03:01 좌표로 이동→LOC_적북측접근로 | 05:50 좌표로 이동→LOC_적북측접근로 | 06:38 속도 지정 | 06:38 좌표로 이동→LOC_적전방방어선후방
+EN-M35-002,병력 수송 트럭 2,RED,M35 Truck,차량/장갑차 - M2HB 계열,ENM35002,대기,4,0,03:02,06:39,move×2 move_slow×1 set_speed×1,03:02 좌표로 이동→LOC_적북측접근로 | 05:50 좌표로 이동→LOC_북측예비방어선 | 06:39 속도 지정 | 06:39 좌표로 이동→LOC_적전방방어선후방
+EN-MIM-001,로켓화력 대체 객체 1,RED,MIM-104 Patriot Launcher,미사일 발사대 - Patriot,ENMIM001,대기,2,0,02:20,05:52,fire_indirect×1 move×1,02:20 좌표 대상 간접사격→FR-LN-001 | 05:52 좌표로 이동→LOC_적북측접근로
+EN-MORT-001,박격포 1,RED,MO-120RT-61 Mortar,포병 - 박격포(m9333he 계열),ENMORT001,대기,2,0,02:11,05:51,fire_indirect×1 move×1,02:11 좌표 대상 간접사격→OBJ-009 | 05:51 좌표로 이동→LOC_북측예비방어선
+EN-MORT-002,박격포 2,RED,MO-120RT-61 Mortar,포병 - 박격포(m9333he 계열),ENMORT002,대기,2,0,02:12,05:51,fire_indirect×1 move×1,02:12 좌표 대상 간접사격→FR-LN-001 | 05:51 좌표로 이동→LOC_적북측접근로
+EN-MORT-003,박격포 3,RED,MO-120RT-61 Mortar,포병 - 박격포(m9333he 계열),ENMORT003,대기,2,0,02:13,05:51,fire_indirect×1 move×1,02:13 좌표 대상 간접사격→FR-FP-001 | 05:51 좌표로 이동→LOC_북측예비방어선
+EN-SA7-001,휴대 대공화기조 1,RED,Russian Soldier SA7,보병 - RPG 계열,ENSA7001,대기,2,0,01:12,05:45,move×2,01:12 좌표로 이동→LOC_동측측방접근로 | 05:45 좌표로 이동→LOC_북측예비방어선
+EN-SA7-002,휴대 대공화기조 2,RED,Russian Soldier SA7,보병 - RPG 계열,ENSA7002,대기,2,0,01:12,05:45,follow×1 move×1,01:12 대형 추종 이동→EN-SA7-001 | 05:45 좌표로 이동→LOC_적북측접근로
+EN-SA7-003,휴대 대공화기조 3,RED,Russian Soldier SA7,보병 - RPG 계열,ENSA7003,대기,2,0,01:12,05:45,follow×1 move×1,01:12 대형 추종 이동→EN-SA7-001 | 05:45 좌표로 이동→LOC_북측예비방어선
+EN-SA7-004,휴대 대공화기조 4,RED,Russian Soldier SA7,보병 - RPG 계열,ENSA7004,대기,2,0,01:12,05:45,follow×1 move×1,01:12 대형 추종 이동→EN-SA7-001 | 05:45 좌표로 이동→LOC_적북측접근로
+EN-SA7-005,휴대 대공화기조 5,RED,Russian Soldier SA7,보병 - RPG 계열,ENSA7005,대기,2,0,01:13,05:46,follow×1 move×1,01:13 대형 추종 이동→EN-SA7-001 | 05:46 좌표로 이동→LOC_북측예비방어선
+EN-SNP-001,정찰·저격조 1,RED,Russian Soldier Sniper-127,보병 - 소총(M4 계열),ENSNP001,대기,2,0,00:38,05:46,move×2,00:38 좌표로 이동→LOC_중앙계곡 | 05:46 좌표로 이동→LOC_적북측접근로
+EN-SNP-002,정찰·저격조 2,RED,Russian Soldier Sniper-127,보병 - 소총(M4 계열),ENSNP002,대기,2,0,00:39,05:47,move×2,00:39 좌표로 이동→LOC_중앙계곡 | 05:47 좌표로 이동→LOC_북측예비방어선
+EN-SNP-003,정찰·저격조 3,RED,Russian Soldier Sniper-127,보병 - 소총(M4 계열),ENSNP003,대기,2,0,00:40,05:47,move×2,00:40 좌표로 이동→LOC_중앙계곡 | 05:47 좌표로 이동→LOC_적북측접근로
+EN-SNP-004,정찰·저격조 4,RED,Russian Soldier Sniper-127,보병 - 소총(M4 계열),ENSNP004,대기,2,0,00:41,05:47,move×2,00:41 좌표로 이동→LOC_중앙계곡 | 05:47 좌표로 이동→LOC_북측예비방어선
+EN-T72-001,전방 전차 1,RED,T-72 MBT,차량/장갑차 - M2HB 계열,ENT72001,대기,1,0,02:25,02:25,move×1,02:25 좌표로 이동→LOC_중앙계곡
+EN-T72-002,전방 전차 2,RED,T-72 MBT,차량/장갑차 - M2HB 계열,ENT72002,대기,1,0,02:26,02:26,move×1,02:26 좌표로 이동→LOC_중앙계곡
+EN-T72-003,전방 전차 3,RED,T-72 MBT,차량/장갑차 - M2HB 계열,ENT72003,대기,1,0,02:27,02:27,move×1,02:27 좌표로 이동→LOC_중앙계곡
+EN-T72-004,전방 전차 4,RED,T-72 MBT,차량/장갑차 - M2HB 계열,ENT72004,대기,1,0,02:28,02:28,move×1,02:28 좌표로 이동→LOC_중앙계곡
+EN-T72-005,전방 전차 5,RED,T-72 MBT,차량/장갑차 - M2HB 계열,ENT72005,대기,1,0,02:29,02:29,move×1,02:29 좌표로 이동→LOC_중앙계곡
+EN-T72-006,전방 전차 6,RED,T-72 MBT,차량/장갑차 - M2HB 계열,ENT72006,대기,1,0,02:30,02:30,move×1,02:30 좌표로 이동→LOC_중앙계곡
+EN-ZPU-001,전방 대공화기 1,RED,ZPU-4 AA Gun,차량/장갑차 - M2HB 계열,ENZPU001,대기,2,0,03:05,05:51,move×2,03:05 좌표로 이동→LOC_적북측접근로 | 05:51 좌표로 이동→LOC_적북측접근로
+EN-ZPU-002,전방 대공화기 2,RED,ZPU-4 AA Gun,차량/장갑차 - M2HB 계열,ENZPU002,대기,2,0,03:06,05:51,move×2,03:06 좌표로 이동→LOC_적북측접근로 | 05:51 좌표로 이동→LOC_북측예비방어선
+FR-AHS-001,장거리 자주포 1,BLUE,AHS Krab Howitzer,포병 - 155mm 자주포,FRAHS001,대기,2,0,02:08,05:41,fire_indirect×1 move×1,02:08 좌표 대상 간접사격→EN-FP-001 | 05:41 좌표로 이동→LOC_목표A남측
+FR-AT-001,대전차팀 1,BLUE,US Army Javelin,보병 - RPG 계열,FRAT001,대기,2,0,01:22,05:35,move×2,01:22 좌표로 이동→LOC_동측능선 | 05:35 좌표로 이동→LOC_중앙킬존남측
+FR-AT-002,대전차팀 2,BLUE,US Army Javelin,보병 - RPG 계열,FRAT002,대기,2,0,01:22,05:35,move×2,01:22 좌표로 이동→LOC_동측능선 | 05:35 좌표로 이동→LOC_목표A남측
+FR-AT-003,대전차팀 3,BLUE,US Army Javelin,보병 - RPG 계열,FRAT003,대기,2,0,01:22,05:35,move×2,01:22 좌표로 이동→LOC_동측능선 | 05:35 좌표로 이동→LOC_중앙킬존남측
+FR-AT-004,대전차팀 4,BLUE,US Army Javelin,보병 - RPG 계열,FRAT004,대기,2,0,01:22,05:35,move×2,01:22 좌표로 이동→LOC_동측능선 | 05:35 좌표로 이동→LOC_목표A남측
+FR-AT-005,대전차팀 5,BLUE,US Army Javelin,보병 - RPG 계열,FRAT005,대기,2,0,01:23,05:35,move×2,01:23 좌표로 이동→LOC_동측능선 | 05:35 좌표로 이동→LOC_중앙킬존남측
+FR-AT-006,대전차팀 6,BLUE,US Army Javelin,보병 - RPG 계열,FRAT006,대기,2,0,01:23,05:35,move×2,01:23 좌표로 이동→LOC_동측능선 | 05:35 좌표로 이동→LOC_목표A남측
+FR-INF-001,방어 보병 1,BLUE,US Army M4,보병 - 소총(M4 계열),FRINF001,대기,2,0,01:15,03:20,move×1 suppress×1,01:15 좌표로 이동→LOC_중앙킬존 | 03:20 제압사격→EN-INF-001
+FR-INF-002,방어 보병 2,BLUE,US Army M4,보병 - 소총(M4 계열),FRINF002,대기,2,0,01:15,03:21,move×1 suppress×1,01:15 좌표로 이동→LOC_중앙킬존 | 03:21 제압사격→EN-INF-002
+FR-INF-003,방어 보병 3,BLUE,US Army M4,보병 - 소총(M4 계열),FRINF003,대기,2,0,01:15,03:22,move×1 suppress×1,01:15 좌표로 이동→LOC_중앙킬존 | 03:22 제압사격→EN-INF-003
+FR-INF-004,방어 보병 4,BLUE,US Army M4,보병 - 소총(M4 계열),FRINF004,대기,2,0,01:15,03:23,move×1 suppress×1,01:15 좌표로 이동→LOC_중앙킬존 | 03:23 제압사격→EN-INF-004
+FR-INF-005,방어 보병 5,BLUE,US Army M4,보병 - 소총(M4 계열),FRINF005,대기,2,0,01:15,03:24,move×1 suppress×1,01:15 좌표로 이동→LOC_중앙킬존 | 03:24 제압사격→EN-INF-005
+FR-INF-006,방어 보병 6,BLUE,US Army M4,보병 - 소총(M4 계열),FRINF006,대기,2,0,01:15,03:25,move×1 suppress×1,01:15 좌표로 이동→LOC_중앙킬존 | 03:25 제압사격→EN-INF-006
+FR-INF-007,방어 보병 7,BLUE,US Army M4,보병 - 소총(M4 계열),FRINF007,대기,2,0,01:15,03:26,move×1 suppress×1,01:15 좌표로 이동→LOC_중앙킬존 | 03:26 제압사격→EN-INF-007
+FR-INF-008,방어 보병 8,BLUE,US Army M4,보병 - 소총(M4 계열),FRINF008,대기,2,0,01:15,03:27,move×1 suppress×1,01:15 좌표로 이동→LOC_중앙킬존 | 03:27 제압사격→EN-INF-008
+FR-INF-009,방어 보병 9,BLUE,US Army M4,보병 - 소총(M4 계열),FRINF009,대기,2,0,01:16,03:28,move×1 suppress×1,01:16 좌표로 이동→LOC_중앙킬존 | 03:28 제압사격→EN-INF-009
+FR-INF-010,방어 보병 10,BLUE,US Army M4,보병 - 소총(M4 계열),FRINF010,대기,2,0,01:16,03:29,move×1 suppress×1,01:16 좌표로 이동→LOC_중앙킬존 | 03:29 제압사격→EN-INF-010
+FR-INF-011,방어 보병 11,BLUE,US Army M4,보병 - 소총(M4 계열),FRINF011,대기,2,0,01:16,03:30,move×1 suppress×1,01:16 좌표로 이동→LOC_중앙킬존 | 03:30 제압사격→EN-INF-011
+FR-INF-012,방어 보병 12,BLUE,US Army M4,보병 - 소총(M4 계열),FRINF012,대기,2,0,01:16,03:31,move×1 suppress×1,01:16 좌표로 이동→LOC_중앙킬존 | 03:31 제압사격→EN-INF-012
+FR-INF-013,방어 보병 13,BLUE,US Army M4,보병 - 소총(M4 계열),FRINF013,대기,2,0,01:16,03:32,move×1 suppress×1,01:16 좌표로 이동→LOC_중앙킬존 | 03:32 제압사격→EN-INF-013
+FR-INF-014,방어 보병 14,BLUE,US Army M4,보병 - 소총(M4 계열),FRINF014,대기,2,0,01:16,03:33,move×1 suppress×1,01:16 좌표로 이동→LOC_중앙킬존 | 03:33 제압사격→EN-INF-014
+FR-INF-015,방어 보병 15,BLUE,US Army M4,보병 - 소총(M4 계열),FRINF015,대기,2,0,01:16,03:34,move×1 suppress×1,01:16 좌표로 이동→LOC_중앙킬존 | 03:34 제압사격→EN-INF-015
+FR-INF-016,방어 보병 16,BLUE,US Army M4,보병 - 소총(M4 계열),FRINF016,대기,2,0,01:16,03:35,move×1 suppress×1,01:16 좌표로 이동→LOC_중앙킬존 | 03:35 제압사격→EN-INF-016
+FR-INF-017,방어 보병 17,BLUE,US Army M4,보병 - 소총(M4 계열),FRINF017,대기,3,0,01:17,05:31,move×2 suppress×1,01:17 좌표로 이동→LOC_중앙킬존 | 03:36 제압사격→EN-INF-017 | 05:31 좌표로 이동→LOC_중앙킬존남측
+FR-INF-018,방어 보병 18,BLUE,US Army M4,보병 - 소총(M4 계열),FRINF018,대기,3,0,01:17,05:31,move×2 suppress×1,01:17 좌표로 이동→LOC_중앙킬존 | 03:37 제압사격→EN-INF-018 | 05:31 좌표로 이동→LOC_목표A남측
+FR-INF-019,방어 보병 19,BLUE,US Army M4,보병 - 소총(M4 계열),FRINF019,대기,3,0,01:17,05:31,move×2 suppress×1,01:17 좌표로 이동→LOC_중앙킬존 | 03:38 제압사격→EN-INF-019 | 05:31 좌표로 이동→LOC_중앙킬존남측
+FR-INF-020,방어 보병 20,BLUE,US Army M4,보병 - 소총(M4 계열),FRINF020,대기,3,0,01:17,05:31,move×2 suppress×1,01:17 좌표로 이동→LOC_중앙킬존 | 03:39 제압사격→EN-INF-020 | 05:31 좌표로 이동→LOC_목표A남측
+FR-INF-021,방어 보병 21,BLUE,US Army M4,보병 - 소총(M4 계열),FRINF021,대기,3,0,01:17,05:31,move×2 suppress×1,01:17 좌표로 이동→LOC_중앙킬존 | 03:40 제압사격→EN-INF-021 | 05:31 좌표로 이동→LOC_중앙킬존남측
+FR-INF-022,방어 보병 22,BLUE,US Army M4,보병 - 소총(M4 계열),FRINF022,대기,3,0,01:17,05:31,move×2 suppress×1,01:17 좌표로 이동→LOC_중앙킬존 | 03:41 제압사격→EN-INF-022 | 05:31 좌표로 이동→LOC_목표A남측
+FR-INF-023,방어 보병 23,BLUE,US Army M4,보병 - 소총(M4 계열),FRINF023,대기,3,0,01:17,05:31,move×2 suppress×1,01:17 좌표로 이동→LOC_중앙킬존 | 03:42 제압사격→EN-INF-023 | 05:31 좌표로 이동→LOC_중앙킬존남측
+FR-INF-024,방어 보병 24,BLUE,US Army M4,보병 - 소총(M4 계열),FRINF024,대기,3,0,01:17,05:31,move×2 suppress×1,01:17 좌표로 이동→LOC_중앙킬존 | 03:43 제압사격→EN-INF-024 | 05:31 좌표로 이동→LOC_목표A남측
+FR-INF-025,방어 보병 25,BLUE,US Army M4,보병 - 소총(M4 계열),FRINF025,대기,3,0,01:18,05:32,move×2 suppress×1,01:18 좌표로 이동→LOC_중앙킬존 | 03:44 제압사격→EN-INF-025 | 05:32 좌표로 이동→LOC_중앙킬존남측
+FR-LAV-001,장갑 수송차 1,BLUE,LAV III APC,차량/장갑차 - M2HB 계열,FRLAV001,대기,2,0,03:08,05:39,move×2,03:08 좌표로 이동→LOC_중앙킬존남측 | 05:39 좌표로 이동→LOC_중앙킬존남측
+FR-LAV-002,장갑 수송차 2,BLUE,LAV III APC,차량/장갑차 - M2HB 계열,FRLAV002,대기,2,0,03:09,05:39,move×2,03:09 좌표로 이동→LOC_중앙킬존남측 | 05:39 좌표로 이동→LOC_목표A남측
+FR-LAV-003,장갑 수송차 3,BLUE,LAV III APC,차량/장갑차 - M2HB 계열,FRLAV003,대기,2,0,03:10,05:39,move×2,03:10 좌표로 이동→LOC_중앙킬존남측 | 05:39 좌표로 이동→LOC_중앙킬존남측
+FR-LAV-004,장갑 수송차 4,BLUE,LAV III APC,차량/장갑차 - M2HB 계열,FRLAV004,대기,2,0,03:11,05:39,move×2,03:11 좌표로 이동→LOC_중앙킬존남측 | 05:39 좌표로 이동→LOC_목표A남측
+FR-M109-001,곡사포 1,BLUE,M109 Howitzer,포병 - 155mm 자주포,FRM109001,대기,2,0,02:04,05:41,fire_indirect×1 move×1,02:04 좌표 대상 간접사격→EN-FP-001 | 05:41 좌표로 이동→LOC_목표A남측
+FR-M109-003,곡사포 3,BLUE,M109 Howitzer,포병 - 155mm 자주포,FRM109003,대기,2,0,02:06,05:41,fire_indirect×1 move×1,02:06 좌표 대상 간접사격→EN-RT-001 | 05:41 좌표로 이동→LOC_목표A남측
+FR-M113-001,궤도 수송차 1,BLUE,M113 APC,차량/장갑차 - M2HB 계열,FRM113001,대기,2,0,03:16,05:39,move×2,03:16 좌표로 이동→LOC_중앙킬존남측 | 05:39 좌표로 이동→LOC_중앙킬존남측
+FR-M113-002,궤도 수송차 2,BLUE,M113 APC,차량/장갑차 - M2HB 계열,FRM113002,대기,2,0,03:17,05:39,move×2,03:17 좌표로 이동→LOC_중앙킬존남측 | 05:39 좌표로 이동→LOC_목표A남측
+FR-M113-003,궤도 수송차 3,BLUE,M113 APC,차량/장갑차 - M2HB 계열,FRM113003,대기,2,0,03:18,05:39,move×2,03:18 좌표로 이동→LOC_중앙킬존남측 | 05:39 좌표로 이동→LOC_중앙킬존남측
+FR-M901-001,로켓화력 대체 객체 1,BLUE,M901 Patriot Launcher,미사일 발사대 - Patriot,FRM901001,대기,2,0,02:10,05:42,fire_indirect×1 move×1,02:10 좌표 대상 간접사격→EN-RT-001 | 05:42 좌표로 이동→LOC_목표A남측
+FR-MORT-001,박격포 1,BLUE,MO-120RT-61 Mortar,포병 - 박격포(m9333he 계열),FRMORT001,대기,2,0,02:00,05:41,fire_indirect×1 move×1,02:00 좌표 대상 간접사격→EN-FP-001 | 05:41 좌표로 이동→LOC_목표A남측
+FR-MORT-003,박격포 3,BLUE,MO-120RT-61 Mortar,포병 - 박격포(m9333he 계열),FRMORT003,대기,2,0,02:02,05:41,fire_indirect×1 move×1,02:02 좌표 대상 간접사격→EN-RT-001 | 05:41 좌표로 이동→LOC_목표A남측
+FR-RPG-001,근접화력팀 1,BLUE,Turkish Soldier RPG,보병 - RPG 계열,FRRPG001,대기,2,0,01:24,05:36,move×2,01:24 좌표로 이동→LOC_동측능선 | 05:36 좌표로 이동→LOC_중앙킬존남측
+FR-RPG-002,근접화력팀 2,BLUE,Turkish Soldier RPG,보병 - RPG 계열,FRRPG002,대기,2,0,01:24,05:36,move×2,01:24 좌표로 이동→LOC_동측능선 | 05:36 좌표로 이동→LOC_목표A남측
+FR-RPG-003,근접화력팀 3,BLUE,Turkish Soldier RPG,보병 - RPG 계열,FRRPG003,대기,2,0,01:24,05:36,move×2,01:24 좌표로 이동→LOC_동측능선 | 05:36 좌표로 이동→LOC_중앙킬존남측
+FR-RPG-004,근접화력팀 4,BLUE,Turkish Soldier RPG,보병 - RPG 계열,FRRPG004,대기,2,0,01:24,05:36,move×2,01:24 좌표로 이동→LOC_동측능선 | 05:36 좌표로 이동→LOC_목표A남측
+FR-RPG-005,근접화력팀 5,BLUE,Turkish Soldier RPG,보병 - RPG 계열,FRRPG005,대기,2,0,01:24,05:36,move×2,01:24 좌표로 이동→LOC_동측능선 | 05:36 좌표로 이동→LOC_중앙킬존남측
+FR-SNP-001,감시·저격조 1,BLUE,US Army XM107,보병 - 소총(M4 계열),FRSNP001,대기,2,0,00:30,05:36,move×2,00:30 좌표로 이동→LOC_적북측접근로 | 05:36 좌표로 이동→LOC_중앙킬존남측
+FR-SNP-002,감시·저격조 2,BLUE,US Army XM107,보병 - 소총(M4 계열),FRSNP002,대기,2,0,00:31,05:36,move×2,00:31 좌표로 이동→LOC_적북측접근로 | 05:36 좌표로 이동→LOC_목표A남측
+FR-SNP-003,감시·저격조 3,BLUE,US Army XM107,보병 - 소총(M4 계열),FRSNP003,대기,2,0,00:32,05:37,move×2,00:32 좌표로 이동→LOC_적북측접근로 | 05:37 좌표로 이동→LOC_중앙킬존남측
+FR-SNP-004,감시·저격조 4,BLUE,US Army XM107,보병 - 소총(M4 계열),FRSNP004,대기,2,0,00:33,05:37,move×2,00:33 좌표로 이동→LOC_적북측접근로 | 05:37 좌표로 이동→LOC_목표A남측
+FR-T69-001,서측 전차 1,BLUE,T-69 MBT,차량/장갑차 - M2HB 계열,FRT69001,대기,1,0,02:50,02:50,move×1,02:50 좌표로 이동→LOC_중앙킬존남측
+FR-T69-002,서측 전차 2,BLUE,T-69 MBT,차량/장갑차 - M2HB 계열,FRT69002,대기,1,0,02:51,02:51,move×1,02:51 좌표로 이동→LOC_중앙킬존남측
+FR-T69-003,서측 전차 3,BLUE,T-69 MBT,차량/장갑차 - M2HB 계열,FRT69003,대기,1,0,02:52,02:52,move×1,02:52 좌표로 이동→LOC_중앙킬존남측
+FR-T69-004,서측 전차 4,BLUE,T-69 MBT,차량/장갑차 - M2HB 계열,FRT69004,대기,1,0,02:53,02:53,move×1,02:53 좌표로 이동→LOC_중앙킬존남측
+FR-T69-005,서측 전차 5,BLUE,T-69 MBT,차량/장갑차 - M2HB 계열,FRT69005,대기,1,0,02:54,02:54,move×1,02:54 좌표로 이동→LOC_중앙킬존남측
+FR-T80-001,동측 전차 1,BLUE,T-80 MBT,차량/장갑차 - M2HB 계열,FRT80001,대기,2,0,03:00,05:38,move×2,03:00 좌표로 이동→LOC_중앙킬존남측 | 05:38 좌표로 이동→LOC_중앙킬존남측
+FR-T80-002,동측 전차 2,BLUE,T-80 MBT,차량/장갑차 - M2HB 계열,FRT80002,대기,2,0,03:01,05:38,move×2,03:01 좌표로 이동→LOC_중앙킬존남측 | 05:38 좌표로 이동→LOC_목표A남측
+FR-T80-003,동측 전차 3,BLUE,T-80 MBT,차량/장갑차 - M2HB 계열,FRT80003,대기,2,0,03:02,05:38,move×2,03:02 좌표로 이동→LOC_중앙킬존남측 | 05:38 좌표로 이동→LOC_중앙킬존남측
+FR-T80-004,동측 전차 4,BLUE,T-80 MBT,차량/장갑차 - M2HB 계열,FRT80004,대기,2,0,03:03,05:38,move×2,03:03 좌표로 이동→LOC_중앙킬존남측 | 05:38 좌표로 이동→LOC_목표A남측
+FR-TRK1-001,탄약 보급차 1,BLUE,M1028 FMTV Canvas Cargo Truck,차량/장갑차 - M2HB 계열,FRTRK1001,대기,4,0,03:23,06:25,move×2 move_slow×1 set_speed×1,03:23 좌표로 이동→LOC_남측제1방어선 | 05:40 좌표로 이동→LOC_목표A남측 | 06:25 속도 지정 | 06:25 좌표로 이동→LOC_포병진지또는방어선후방
+FR-TRK1-002,탄약 보급차 2,BLUE,M1028 FMTV Canvas Cargo Truck,차량/장갑차 - M2HB 계열,FRTRK1002,대기,4,0,03:24,06:26,move×2 move_slow×1 set_speed×1,03:24 좌표로 이동→LOC_남측제1방어선 | 05:40 좌표로 이동→LOC_중앙킬존남측 | 06:26 속도 지정 | 06:26 좌표로 이동→LOC_포병진지또는방어선후방
+FR-TRK2-001,포탄 보급차 1,BLUE,M1083A1 FMTV Flatbed Truck,차량/장갑차 - M2HB 계열,FRTRK2001,대기,4,0,03:28,06:30,move×2 move_slow×1 set_speed×1,03:28 좌표로 이동→LOC_남측제1방어선 | 05:40 좌표로 이동→LOC_중앙킬존남측 | 06:30 속도 지정 | 06:30 좌표로 이동→LOC_포병진지또는방어선후방
+FR-TRK2-002,포탄 보급차 2,BLUE,M1083A1 FMTV Flatbed Truck,차량/장갑차 - M2HB 계열,FRTRK2002,대기,4,0,03:29,06:31,move×2 move_slow×1 set_speed×1,03:29 좌표로 이동→LOC_남측제1방어선 | 05:40 좌표로 이동→LOC_목표A남측 | 06:31 속도 지정 | 06:31 좌표로 이동→LOC_포병진지또는방어선후방
+FR-ZPU-001,대공화기 1,BLUE,ZPU-4 AA Gun,차량/장갑차 - M2HB 계열,FRZPU001,대기,2,0,03:32,05:41,move×2,03:32 좌표로 이동→LOC_중앙킬존남측 | 05:41 좌표로 이동→LOC_중앙킬존남측
+FR-ZPU-002,대공화기 2,BLUE,ZPU-4 AA Gun,차량/장갑차 - M2HB 계열,FRZPU002,대기,2,0,03:33,05:41,move×2,03:33 좌표로 이동→LOC_중앙킬존남측 | 05:41 좌표로 이동→LOC_목표A남측
