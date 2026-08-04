@@ -1,27 +1,27 @@
-entity_class,type_group,weapons,note
-US Army M4,보병 - 소총(M4 계열),M4 rifle,
-Russian Soldier AK47,보병 - 소총(M4 계열),AK-47,golden .oob display-name 실측. 이전 값 'M4 rifle'은 이 모델에 없다
-Russian Soldier Sniper-127,보병 - 소총(M4 계열),AK-47,golden .oob display-name 실측. 이전 값 'M4 rifle'은 이 모델에 없다
-US Army XM107,보병 - 소총(M4 계열),M60 Machine Gun,golden .oob display-name 실측. 이전 값 'M4 rifle'은 이 모델에 없다
-Turkish Soldier RPG,보병 - RPG 계열,Handheld RPG Launcher,
-US Army Javelin,보병 - RPG 계열,Handheld RPG Launcher,
-Russian Soldier SA7,보병 - RPG 계열,Handheld RPG Launcher,신규 — MANPADS를 휴대 발사기로 취급
-T-69 MBT,차량/장갑차 - M2HB 계열,M2HB Machine Gun,
-T-72 MBT,차량/장갑차 - M2HB 계열,M2HB Machine Gun,
-T-80 MBT,차량/장갑차 - M2HB 계열,M2HB Machine Gun,
-M1A2 Abrams MBT,차량/장갑차 - M2HB 계열,120mm Gun,golden .oob display-name 실측. 이전 값 'M2HB Machine Gun'은 이 모델에 없다
-BTR-60 APC,차량/장갑차 - M2HB 계열,M2HB Machine Gun,
-BTR-80 APC,차량/장갑차 - M2HB 계열,30mm Gun,golden .oob display-name 실측. 이전 값 'M2HB Machine Gun'은 이 모델에 없다
-LAV III APC,차량/장갑차 - M2HB 계열,M2HB Machine Gun,
-M113 APC,차량/장갑차 - M2HB 계열,M2HB Machine Gun,
-ZPU-4 AA Gun,차량/장갑차 - M2HB 계열,M2HB Machine Gun,
-GAZ-66 Truck,차량/장갑차 - M2HB 계열,,비무장
-M35 Truck,차량/장갑차 - M2HB 계열,,비무장
-M1028 FMTV Canvas Cargo Truck,차량/장갑차 - M2HB 계열,,비무장
-M1083A1 FMTV Flatbed Truck,차량/장갑차 - M2HB 계열,,비무장
-MO-120RT-61 Mortar,포병 - 박격포(m9333he 계열),Indirect-Fire-Gun:m9333he,
-M109 Howitzer,포병 - 155mm 자주포,Indirect-Fire-Gun:M107-155mm,
-AHS Krab Howitzer,포병 - 155mm 자주포,Indirect-Fire-Gun:M107-155mm,
-CAESAR SP Howitzer,포병 - 155mm 자주포,Indirect-Fire-Gun:M107-155mm,
-M901 Patriot Launcher,미사일 발사대 - Patriot,Patriot Missile Launcher,"golden .oob 실측. type_group은 태스크 템플릿을 고르는 키다 — 전용 그룹을 둬야 이동·간접사격을 다 받는다. 차량 그룹에 넣으면 다른 차량까지 간접사격 템플릿을 갖고, 미분류면 이동조차 못 한다. 지상 간접사격 성립 여부(설계 스펙 §8.3)는 weapon_ranges.csv의 unverified=1이 계속 붙잡는다."
-MIM-104 Patriot Launcher,미사일 발사대 - Patriot,Patriot Missile Launcher,"golden .oob 실측. type_group은 태스크 템플릿을 고르는 키다 — 전용 그룹을 둬야 이동·간접사격을 다 받는다. 차량 그룹에 넣으면 다른 차량까지 간접사격 템플릿을 갖고, 미분류면 이동조차 못 한다. 지상 간접사격 성립 여부(설계 스펙 §8.3)는 weapon_ranges.csv의 unverified=1이 계속 붙잡는다."
+﻿entity_class,type_group,weapons,unsupported_tasks,note
+US Army M4,보병 - 소총(M4 계열),M4 rifle,,
+Russian Soldier AK47,보병 - 소총(M4 계열),AK-47,,golden .oob display-name 실측. 이전 값 'M4 rifle'은 이 모델에 없다
+Russian Soldier Sniper-127,보병 - 소총(M4 계열),AK-47,,golden .oob display-name 실측. 이전 값 'M4 rifle'은 이 모델에 없다
+US Army XM107,보병 - 소총(M4 계열),M60 Machine Gun,,golden .oob display-name 실측. 이전 값 'M4 rifle'은 이 모델에 없다
+Turkish Soldier RPG,보병 - RPG 계열,Handheld RPG Launcher,,
+US Army Javelin,보병 - RPG 계열,Handheld RPG Launcher,,
+Russian Soldier SA7,보병 - RPG 계열,Handheld RPG Launcher,,신규 — MANPADS를 휴대 발사기로 취급
+T-69 MBT,차량/장갑차 - M2HB 계열,M2HB Machine Gun,,
+T-72 MBT,차량/장갑차 - M2HB 계열,M2HB Machine Gun,find_cover,엄폐 탐색 컨트롤러 없음. 12/12 실패
+T-80 MBT,차량/장갑차 - M2HB 계열,M2HB Machine Gun,,
+M1A2 Abrams MBT,차량/장갑차 - M2HB 계열,120mm Gun,find_cover,golden .oob display-name 실측. 이전 값 'M2HB Machine Gun'은 이 모델에 없다 / 엄폐 탐색 컨트롤러 없음. 5/5 실패. 같은 전차라도 T-69·T-80은 8/8 성공이라 모델 단위로 막는다
+BTR-60 APC,차량/장갑차 - M2HB 계열,M2HB Machine Gun,find_cover,엄폐 탐색 컨트롤러 없음. ENBTR60001 1/1 실패. golden도 BTR-60(AFV 3)에 engage_from_cover만 줬고 find_cover는 준 적이 없다
+BTR-80 APC,차량/장갑차 - M2HB 계열,30mm Gun,,golden .oob display-name 실측. 이전 값 'M2HB Machine Gun'은 이 모델에 없다
+LAV III APC,차량/장갑차 - M2HB 계열,M2HB Machine Gun,,
+M113 APC,차량/장갑차 - M2HB 계열,M2HB Machine Gun,,
+ZPU-4 AA Gun,차량/장갑차 - M2HB 계열,M2HB Machine Gun,move-to-location-task,견인 대공포 — 이동 컨트롤러 없음. ENZPU001-003·FRZPU001-003 6/6 전원 Move to 실패
+GAZ-66 Truck,차량/장갑차 - M2HB 계열,,,비무장
+M35 Truck,차량/장갑차 - M2HB 계열,,,비무장
+M1028 FMTV Canvas Cargo Truck,차량/장갑차 - M2HB 계열,,,비무장
+M1083A1 FMTV Flatbed Truck,차량/장갑차 - M2HB 계열,,,비무장
+MO-120RT-61 Mortar,포병 - 박격포(m9333he 계열),Indirect-Fire-Gun:m9333he,move-to-location-task,견인 박격포 — 이동 컨트롤러 없음. ENMORT 4/5·FRMORT 4/4 Move to 실패
+M109 Howitzer,포병 - 155mm 자주포,Indirect-Fire-Gun:M107-155mm,,
+AHS Krab Howitzer,포병 - 155mm 자주포,Indirect-Fire-Gun:M107-155mm,,
+CAESAR SP Howitzer,포병 - 155mm 자주포,Indirect-Fire-Gun:M107-155mm,,
+M901 Patriot Launcher,미사일 발사대 - Patriot,Patriot Missile Launcher,move-to-location-task;ffe-on-location,"golden .oob 실측. type_group은 태스크 템플릿을 고르는 키다 — 전용 그룹을 둬야 이동·간접사격을 다 받는다. 차량 그룹에 넣으면 다른 차량까지 간접사격 템플릿을 갖고, 미분류면 이동조차 못 한다. 지상 간접사격 성립 여부(설계 스펙 §8.3)는 weapon_ranges.csv의 unverified=1이 계속 붙잡는다. / 견인 발사대 — 이동 컨트롤러 없고 간접사격 포도 없음. FRM901001이 Move to·FFE-On-Location 둘 다 실패"
+MIM-104 Patriot Launcher,미사일 발사대 - Patriot,Patriot Missile Launcher,ffe-on-location,"golden .oob 실측. type_group은 태스크 템플릿을 고르는 키다 — 전용 그룹을 둬야 이동·간접사격을 다 받는다. 차량 그룹에 넣으면 다른 차량까지 간접사격 템플릿을 갖고, 미분류면 이동조차 못 한다. 지상 간접사격 성립 여부(설계 스펙 §8.3)는 weapon_ranges.csv의 unverified=1이 계속 붙잡는다. / 간접사격 포 없음. ENMIM001 FFE-On-Location 실패(이동은 정상이라 move는 막지 않는다)"

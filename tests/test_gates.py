@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from vtmak.gates import blocking, check_g0, check_g1, engagement_pairs
-from vtmak.geometry import BattlefieldLayout
+from vtmak.geometry import BattlefieldLayout, Coord
 from vtmak.paths import SCENARIO
 from vtmak.parser import Event, PatternMap, parse_scenario
 from vtmak.ranges import WeaponRanges
@@ -100,6 +100,9 @@ def test_g0_catches_a_layout_that_breaks_ranges(env):
     v3부터 좌표는 golden 지형점이라 scale 같은 전역 축소 손잡이가 없다. 대신
     전장을 한 점으로 뭉갠다 — 간접사격 최소사거리는 반드시 깨진다. 어떤 원문을
     넣어도 성립하는 망가뜨리기라서 이걸 쓴다.
+
+    최소사거리 미달이 BLOCK인지 REPORT인지는 모델마다 다르므로(아래 테스트)
+    여기서는 심각도를 묻지 않고 '잡히는가'만 본다.
     """
     res, lay, _, wr, reg = env
     saved = dict(lay._coord)
@@ -111,31 +114,58 @@ def test_g0_catches_a_layout_that_breaks_ranges(env):
     finally:
         lay._coord.clear()
         lay._coord.update(saved)
+    assert any(x.code == "C0.1" for x in v), [x.detail for x in v][:5]
+
+
+def test_g0_blocks_when_direct_fire_runs_out_of_range(env):
+    """직접사격이 최대사거리를 넘으면 BLOCK으로 막는다.
+
+    완화(REPORT)는 최소사거리에만, 그것도 표가 선언한 모델에만 적용된다.
+    최대사거리 초과는 언제나 배치 오류라 파이프라인을 세워야 한다.
+    """
+    res, lay, _, wr, reg = env
+    saved = dict(lay._coord)
+    try:
+        # 지명을 경도로 흩어 서로 수 km씩 떨어뜨린다 — 소총 사거리가 깨진다.
+        for i, k in enumerate(sorted(lay._coord)):
+            c = lay._coord[k]
+            lay._coord[k] = Coord(c.lat, c.lon + 0.05 * i, c.alt)
+        v = check_g0(res.events, reg, lay, wr)
+    finally:
+        lay._coord.clear()
+        lay._coord.update(saved)
     hard = blocking(v)
-    assert any(x.code == "C0.1" for x in hard), [x.detail for x in v][:5]
+    assert any(x.code == "C0.2" for x in hard), [x.detail for x in v][:5]
 
 
 def test_g0_relaxes_min_range_only_for_the_declared_models(env):
-    """155mm 자주포 3종만 최소사거리 미달을 REPORT로 내렸다(사용자 결정).
+    """min_severity를 REPORT로 선언한 모델만 완화된다(사용자 결정).
 
     나머지 모델은 그대로 BLOCK이어야 한다 — 완화가 전역 무력화가 되면
-    진짜 배치 오류를 놓친다.
+    진짜 배치 오류를 놓친다. 지금 완화된 모델은 155mm 자주포 3종과
+    MO-120RT-61 박격포이고, 넷 다 근거가 weapon_ranges.csv의 note에 있다.
     """
     res, lay, _, wr, reg = env
     v = check_g0(res.events, reg, lay, wr)
     close = [x for x in v if x.code == "C0.1"]
     assert close, "골든 배치는 155mm 최소사거리를 못 채운다"
     assert all(x.severity == "REPORT" for x in close), [x.detail for x in close]
-    assert all("Howitzer" in x.detail for x in close), [x.detail for x in close]
-    assert wr.min_severity("MO-120RT-61 Mortar") == "BLOCK"
+    relaxed = {c for c in wr.classes() if wr.min_severity(c) == "REPORT"}
+    assert relaxed == {"M109 Howitzer", "AHS Krab Howitzer",
+                       "CAESAR SP Howitzer", "MO-120RT-61 Mortar"}
+    # 완화된 모델의 사격만 REPORT로 나왔는가.
+    assert all(any(c in x.detail for c in relaxed) for x in close), \
+        [x.detail for x in close]
     assert wr.min_severity("US Army Javelin") == "BLOCK"
 
 
-def test_g0_reports_derived_locations_as_unverified_terrain(env):
-    """규칙으로 민 파생 지점은 지형이 확인되지 않았다는 사실을 남긴다."""
+def test_g0_reports_unverified_terrain(env):
+    """규칙으로 민 점(파생·이동)은 지형이 확인되지 않았다는 사실을 남긴다."""
     res, lay, _, wr, reg = env
     v = check_g0(res.events, reg, lay, wr)
-    derived = [x for x in v if x.code == "C0.7"]
-    assert {x.severity for x in derived} == {"REPORT"}
-    assert len(derived) == len(lay.derived_ids())
-    assert any("중앙계곡북측" in x.detail for x in derived)
+    unverified = [x for x in v if x.code == "C0.7"]
+    assert {x.severity for x in unverified} == {"REPORT"}
+    assert len(unverified) == len(lay.unverified_terrain_ids())
+    assert any("중앙계곡북측" in x.detail for x in unverified)
+    # 옮긴 golden 점도 같은 이유로 보고된다 — golden이 주던 육지 보증이 없다.
+    assert any("아군포병진지" in x.detail for x in unverified)

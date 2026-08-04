@@ -63,14 +63,32 @@ def test_entities_sharing_a_location_are_jittered(spec):
 
 
 def test_every_entity_gets_a_pln(spec):
-    """태스크가 하나도 없는 엔티티는 없어야 한다.
+    """플랜이 빈 엔티티는 '실행할 수 없는 태스크만 받은' 객체뿐이어야 한다.
 
     플랜이 비면 VR-Forces에서 그 객체는 초기 배치 자리에 가만히 서 있는다.
-    원문이 이동·사격을 시켰는데 저작이 안 된 것이므로 조용히 넘기지 않는다.
+    원문이 이동·사격을 시켰는데 저작이 안 된 것이면 조용히 넘기지 않는다.
+    반대로 VR-Forces가 실행을 거부하는 것이 실측된 조합(skip_reason)만 남아
+    비었다면 그건 의도한 결과다 — 견인 대공포처럼 이 시나리오에서 할 수 있는
+    일이 하나도 없는 모델이 있다.
     """
-    empty = sorted(oid for oid, steps in spec.entity_plans.items()
-                   if not any(s.pln for s in steps))
-    assert empty == [], empty
+    for oid, steps in sorted(spec.entity_plans.items()):
+        if any(s.pln for s in steps):
+            continue
+        assert steps, oid
+        assert all(s.skip_reason for s in steps), \
+            (oid, [s.issues for s in steps if not s.skip_reason])
+
+
+def test_empty_plans_are_only_towed_equipment(spec):
+    """플랜이 빈 객체가 실제로 어느 모델인지 못 박아 둔다.
+
+    unsupported_tasks가 넓어지면 여기서 먼저 걸린다 — 조용히 객체가
+    늘어나면 시나리오가 소리 없이 비어 간다.
+    """
+    cls = {e.object_id: e.entity_class for e in spec.entities}
+    empty = {cls[oid] for oid, steps in spec.entity_plans.items()
+             if not any(s.pln for s in steps)}
+    assert empty == {"ZPU-4 AA Gun", "M901 Patriot Launcher"}, empty
 
 
 def test_no_synthesised_plan_steps(spec):

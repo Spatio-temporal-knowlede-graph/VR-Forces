@@ -8,6 +8,13 @@
 
 무기 이름은 치환하지 않는다. task_catalog의 템플릿이 type_group별로 이미
 검증된 무기명을 담고 있고, 그게 VR-Forces에서 실제로 도는 값이다.
+
+태스크를 만들지 않는 경우가 둘 있다. 둘 다 VR-Forces가 실행을 거부하는 것을
+2026-08-04 vrfSim.log에서 실측한 결과다(설계 결정이 아니라 관측이다).
+1) 모델에 그 task의 컨트롤러가 없다 — entity_class_map.csv의 unsupported_tasks.
+2) 간접사격이 최소사거리에 못 미친다 — weapon_ranges.csv의 indirect_min_m.
+어느 쪽이든 이벤트·원문 술어·STKG 관계는 그대로 남는다. 빠지는 것은 .pln의
+태스크뿐이다.
 """
 from __future__ import annotations
 
@@ -17,7 +24,6 @@ from typing import Protocol
 
 from ..geometry import Coord
 from ..parser import Event, PatternMap
-from ..gates import REPORT
 from ..ranges import OK, TOO_CLOSE, UNVERIFIED, WeaponRanges
 from ..registry import EntityDef
 from .catalog import TaskCatalog
@@ -64,6 +70,13 @@ class PlanContext(Protocol):
     def unit_leader(self, object_id: str) -> str | None: ...
 
 
+# pln을 만들지 않은 이유 중 '의도한 것'. VR-Forces가 실행을 거부한다는 사실이
+# 실측으로 확인돼 일부러 저작하지 않은 경우다. 값이 비어 있으면 결함이다
+# (템플릿 없음·참조 미해결 등) — G3가 그 둘을 다른 심각도로 다룬다.
+SKIP_UNSUPPORTED = "unsupported_task"     # 모델에 그 task의 컨트롤러가 없다
+SKIP_MIN_RANGE = "below_min_range"        # 간접사격 최소사거리 미달
+
+
 @dataclass
 class PlanStep:
     event_id: str
@@ -74,6 +87,7 @@ class PlanStep:
     pln: str | None
     refs: list[str] = field(default_factory=list)
     issues: list[str] = field(default_factory=list)
+    skip_reason: str = ""
 
 
 def build_entity_plan(events: list[Event], entity: EntityDef,
@@ -127,13 +141,17 @@ def _one(e: Event, entity: EntityDef, kind: str, catalog: TaskCatalog,
             step.issues.append("교전 거리 미산출 — G0가 이 사격을 못 봤다")
             return [step]
         verdict = ranges.check(entity.entity_class, fire, d)
-        relaxed = (verdict == TOO_CLOSE
-                   and ranges.min_severity(entity.entity_class) == REPORT)
-        if relaxed:
-            # 교리상 최소사거리 미달이지만 사람이 감수하기로 한 모델이다.
-            # 태스크는 만들고 사실만 남긴다(G0가 REPORT로 이미 알렸다).
-            step.issues.append(f"교리상 최소사거리 미달 ({d:.0f}m) — 감수")
-        elif verdict not in (OK, UNVERIFIED):
+        if verdict == TOO_CLOSE:
+            # 최소사거리 미달은 min_severity와 무관하게 태스크를 만들지 않는다.
+            # REPORT는 '파이프라인을 멈추지 않는다'는 뜻이지 '쏠 수 있다'는 뜻이
+            # 아니다. VR-Forces는 실제로 거부한다 — 2026-08-04 vrfSim.log 실측:
+            # "Indirect fire target less than min range (2000 m)". 태스크를 내면
+            # 로그만 더럽히고 사격은 일어나지 않는다. 이벤트·STKG 관계는 남는다.
+            step.issues.append(
+                f"최소사거리 미달 ({d:.0f}m) — VR-Forces가 사격을 거부한다")
+            step.skip_reason = SKIP_MIN_RANGE
+            return [step]
+        if verdict not in (OK, UNVERIFIED):
             step.issues.append(
                 f"사거리 {verdict} ({d:.0f}m) — G0가 먼저 잡았어야 함")
             return [step]
@@ -146,6 +164,16 @@ def _one(e: Event, entity: EntityDef, kind: str, catalog: TaskCatalog,
             f"type_group={entity.type_group}")
         return [step]
     step.action_label = label
+    if tmpl.task_or_request_type in entity.unsupported_tasks:
+        # 이 모델에는 그 task를 실행할 컨트롤러(=시스템)가 없다. 태스크를 내면
+        # VR-Forces가 "No controller or Controller is disabled"로 거절한다.
+        # type_group은 템플릿 선택 단위라 이 판정에 쓰기엔 굵다(T-72는 실패,
+        # 같은 그룹의 T-80은 성공). 근거는 entity_class_map.csv의 note.
+        step.issues.append(
+            f"{entity.entity_class}에 {tmpl.task_or_request_type} 컨트롤러 없음"
+            " — VR-Forces 실측(vrfSim.log)")
+        step.skip_reason = SKIP_UNSUPPORTED
+        return [step]
     step.pln, step.refs = _fill(tmpl.pln, ref_kind, ref, ctx,
                                 ctx.coord_of(entity.object_id))
     step.pln = with_weapon(step.pln, entity.weapons)

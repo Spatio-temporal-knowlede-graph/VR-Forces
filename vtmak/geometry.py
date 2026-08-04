@@ -16,6 +16,10 @@ from pathlib import Path
 
 ZERO = (0.0, 0.0, 0.0)
 
+# 육지가 보증되지 않는 좌표 출처. golden은 사람이 지형 위에 찍은 점이라 안전하고,
+# 규칙으로 민 점(derived)과 옮긴 점(relocated)은 지형이 확인되지 않았다.
+UNVERIFIED_TERRAIN_SRC = ("derived", "relocated")
+
 # WGS84 타원체 상수. .scnx의 (location X Y Z)는 ECEF geocentric 미터다.
 _WGS84_A = 6378137.0
 _WGS84_E2 = 6.69437999014e-3  # 이심률² = 2f - f²
@@ -117,11 +121,17 @@ class BattlefieldLayout:
         return location_id in self._coord
 
     def source_of(self, location_id: str) -> str:
-        """golden = 사람이 찍은 지형점, derived = 규칙으로 민 점(지형 미확인)."""
+        """golden = 사람이 찍은 지형점, derived = 규칙으로 민 점,
+        relocated = golden 점을 relocate 규칙으로 옮긴 점(뒤 둘은 지형 미확인)."""
         return self._src.get(location_id, "")
 
     def derived_ids(self) -> list[str]:
         return sorted(k for k, v in self._src.items() if v == "derived")
+
+    def unverified_terrain_ids(self) -> list[str]:
+        """지형(물·급경사)이 확인되지 않은 지명. golden 지형점만 육지가 보증된다."""
+        return sorted(k for k, v in self._src.items()
+                      if v in UNVERIFIED_TERRAIN_SRC)
 
     def static_target(self, object_id: str) -> str | None:
         """정적 객체(포병진지·킬존 등) → 바인딩된 지명. 없으면 None."""

@@ -112,10 +112,14 @@ def check_g3(spec: ScnxSpec, golden: Golden,
             if s.pln is None:
                 if not s.issues:
                     continue
-                unclassified = tg_by_id.get(oid) == UNCLASSIFIED
+                # 일부러 안 만든 것과 못 만든 것을 가른다. skip_reason이 붙은
+                # 것은 VR-Forces가 실행을 거부함이 실측된 조합이라 저작하지
+                # 않기로 한 사실이고, 무기체계 미확정(미분류)도 설계가 인정한
+                # 사실이다(설계 스펙 §8.3). 나머지는 결함이라 차단한다.
+                intended = bool(s.skip_reason) or tg_by_id.get(oid) == UNCLASSIFIED
                 out.append(Violation(
                     "G3", "C3.5", f"{oid} {s.event_id}: {'; '.join(s.issues)}",
-                    REPORT if unclassified else "BLOCK"))
+                    REPORT if intended else "BLOCK"))
                 continue
             if not balanced(s.pln):
                 out.append(Violation("G3", "C3.6",

@@ -96,6 +96,23 @@ class _Frame:
         return self.offset(c, de / n * dist, dn / n * dist)
 
 
+def relocate(pts: dict[str, Coord], rules: dict, frame: _Frame) -> set[str]:
+    """golden 통제점을 축 방위로 민다. pts를 제자리에서 고치고 옮긴 id를 돌려준다.
+
+    사람이 찍은 자리가 무기의 최소사거리를 만족하지 못할 때만 쓴다. 축은 원래
+    golden 점들로 이미 계산돼 있으므로(main이 frame을 먼저 만든다) 옮긴 결과가
+    축 자체를 흔들지 않는다 — 규칙을 바꿔도 방위가 따라 움직이지 않는다.
+    """
+    moved: set[str] = set()
+    for lid, spec in (rules.get("relocate") or {}).items():
+        base = pts.get(lid)
+        if base is None:
+            raise KeyError(f"relocate 대상이 golden에 없다: {lid}")
+        pts[lid] = frame.push(base, spec["dir"], float(spec["dist_m"]))
+        moved.add(lid)
+    return moved
+
+
 def derive(pts: dict[str, Coord], rules: dict, frame: _Frame
            ) -> dict[str, Coord]:
     out: dict[str, Coord] = {}
@@ -124,13 +141,20 @@ def main() -> int:
     print(f"전장 축: 아군→적 방위 {frame.bearing_deg:.1f}° "
           f"(시나리오 '북'). '동' = {(frame.bearing_deg + 90) % 360:.1f}°")
 
+    # 파생보다 먼저 민다 — base가 옮겨진 지명이면 파생 지점도 따라와야 한다.
+    moved = relocate(pts, rules, frame)
+    for lid in sorted(moved):
+        spec = rules["relocate"][lid]
+        print(f"이동: {lid} → 축 '{spec['dir']}' {spec['dist_m']}m")
+
     derived = derive(pts, rules, frame)
     print(f"파생 지점 {len(derived)}개")
 
     locations = {}
     for lid, c in sorted(pts.items()):
         locations[lid] = {"lat": round(c.lat, 7), "lon": round(c.lon, 7),
-                          "alt": round(c.alt, 1), "src": "golden"}
+                          "alt": round(c.alt, 1),
+                          "src": "relocated" if lid in moved else "golden"}
     for lid, c in sorted(derived.items()):
         locations[lid] = {"lat": round(c.lat, 7), "lon": round(c.lon, 7),
                           "alt": round(c.alt, 1), "src": "derived"}
@@ -143,7 +167,8 @@ def main() -> int:
                            "config/layout_rules.json"],
         "note": ("손으로 고치지 말 것. golden 통제점을 옮겼거나 규칙을 바꿨으면 "
                  "01_harvest_layout.py를 다시 돌린다. src=golden은 사람이 찍은 "
-                 "지형점, src=derived는 규칙으로 민 점이다(지형 미확인)."),
+                 "지형점, src=derived는 규칙으로 민 점, src=relocated는 golden "
+                 "점을 relocate 규칙으로 옮긴 점이다(뒤 둘은 지형 미확인)."),
         "axis_bearing_deg": round(frame.bearing_deg, 2),
         "locations": locations,
         "static_targets": rules["static_targets"],

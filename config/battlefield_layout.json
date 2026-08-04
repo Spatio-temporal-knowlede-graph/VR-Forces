@@ -6,7 +6,7 @@
     "yewon_test/*.oob",
     "config/layout_rules.json"
   ],
-  "note": "손으로 고치지 말 것. golden 통제점을 옮겼거나 규칙을 바꿨으면 01_harvest_layout.py를 다시 돌린다. src=golden은 사람이 찍은 지형점, src=derived는 규칙으로 민 점이다(지형 미확인).",
+  "note": "손으로 고치지 말 것. golden 통제점을 옮겼거나 규칙을 바꿨으면 01_harvest_layout.py를 다시 돌린다. src=golden은 사람이 찍은 지형점, src=derived는 규칙으로 민 점, src=relocated는 golden 점을 relocate 규칙으로 옮긴 점이다(뒤 둘은 지형 미확인).",
   "axis_bearing_deg": 163.36,
   "locations": {
     "LOC_남측고지관측소": {
@@ -76,10 +76,10 @@
       "src": "golden"
     },
     "LOC_아군포병진지": {
-      "lat": 21.3866481,
-      "lon": -157.7344951,
+      "lat": 21.3953015,
+      "lon": -157.7372565,
       "alt": 1.0,
-      "src": "golden"
+      "src": "relocated"
     },
     "LOC_아군후방보급집결지": {
       "lat": 21.3881307,
@@ -118,10 +118,10 @@
       "src": "golden"
     },
     "LOC_적포병진지": {
-      "lat": 21.3759377,
-      "lon": -157.734497,
+      "lat": 21.3672844,
+      "lon": -157.7317356,
       "alt": 5.3,
-      "src": "golden"
+      "src": "relocated"
     },
     "LOC_적후방보급집결지": {
       "lat": 21.3733367,
@@ -178,8 +178,8 @@
       "src": "derived"
     },
     "LOC_포병진지또는방어선후방": {
-      "lat": 21.3888114,
-      "lon": -157.7351855,
+      "lat": 21.3974648,
+      "lon": -157.7379468,
       "alt": 1.0,
       "src": "derived"
     }

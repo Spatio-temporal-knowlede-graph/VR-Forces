@@ -4,7 +4,7 @@
 관측이며 시각대도 다르다(실측: 전역 08:09~08:16, 드론 22:00~22:07).
 
 열은 내보내기가 준 8열 그대로 낸다 — subject, predicate, object, latitude,
-longitude, timestamp, source, CID. predicate를 정규형으로 바꾸고 object를
+longitude, timestamp, source. predicate를 정규형으로 바꾸고 object를
 채울 뿐이다.
 
 행은 시뮬레이터 인프라 객체만 지운다. 입력 행 수 != 출력 행 수 + 삭제 행
@@ -33,6 +33,27 @@ from vtmak.stkg.rewrite import OUT_COLS, rewrite             # noqa: E402
 
 REQUIRED = ("subject", "predicate", "timestamp", "source", "latitude",
             "longitude")
+
+# 내보내기 판마다 열 이름이 다르다. 20260804판은 이름을 바꾸면서 subject와
+# object의 뜻까지 맞바꿔 놨다 — 20260804의 `object`가 20260803의 `subject`(행위
+# 객체)이고, 20260804의 `subject`가 전 행 '-'인 대상 자리다. 열 하나씩 별칭을
+# 걸면 두 이름이 서로 덮어써서 못 푼다. 헤더 전체로 판을 골라 통째로 옮긴다.
+#   (판을 알아보는 열 집합, 원본 열 → 이 코드가 쓰는 표준 열)
+_SCHEMAS = [
+    ({"object", "event", "subject", "lat", "lon"},
+     {"object": "subject", "event": "predicate", "subject": "object",
+      "lat": "latitude", "lon": "longitude"}),
+]
+
+
+def _standardize(row: dict) -> dict:
+    """내보내기 열 이름을 표준 8열 이름으로 맞춘다. 모르는 판은 그대로 둔다."""
+    for signature, mapping in _SCHEMAS:
+        if signature <= row.keys():
+            row = {mapping.get(k, k): v for k, v in row.items()}
+            break
+    row.setdefault("object", "")
+    return row
 
 
 def _out_name(path: Path) -> str:
@@ -78,12 +99,12 @@ def main() -> int:
             continue
         with open(path, encoding="utf-8", newline="") as fh:
             reader = csv.DictReader(fh)
-            missing = [c for c in REQUIRED if c not in (reader.fieldnames or [])]
-            if missing:
-                print(f"  {path.name}: 필수 열 없음 {missing} — 건너뜀")
-                failed = True
-                continue
-            rows = list(reader)
+            rows = [_standardize(r) for r in reader]
+        missing = [c for c in REQUIRED if rows and c not in rows[0]]
+        if missing:
+            print(f"  {path.name}: 필수 열 없음 {missing} — 건너뜀")
+            failed = True
+            continue
 
         out_rows, links, unresolved, tally = rewrite(rows, layout, uuid_map)
 
@@ -102,6 +123,13 @@ def main() -> int:
         print(f"  {path.name:42} {len(rows):7,}행 → {len(out_rows):7,}행 "
               f"(삭제 {tally.dropped:,}) · object 채움 "
               f"{tally.with_object:7,}{mark}")
+        print(f"  {'':42} 등장 객체 {tally.seen:3} "
+              f"(주체 {len(tally.subjects):3} = 엔티티 {tally.entities:3} + "
+              f"발사체 {len(tally.munition_subjects)}"
+              f"{f' , 대상에만 {len(tally.object_entities - tally.subjects)}'
+                 if tally.object_entities - tally.subjects else ''}) · "
+              f"지명 {len(tally.object_locations):2} · "
+              f"삭제 객체 {len(tally.dropped_names)}")
         report += _section(path, dest, tally, links, unresolved)
 
     (out_dir / "report.md").write_text("\n".join(report) + "\n",
@@ -122,7 +150,20 @@ def _section(src: Path, dest: Path, tally, links, unresolved) -> list[str]:
              f"- object 채워진 행: {tally.with_object:,}",
              f"- 발사체 행 {tally.munitions:,} 중 사수 확정 "
              f"{tally.munitions_linked:,}", "",
-             "### 술어별 행수", ""]
+             "### 등장 객체", "",
+             f"- 객체 **{tally.seen}개** — 주체 {len(tally.subjects)} "
+             f"(엔티티 {tally.entities} + 발사체 "
+             f"{len(tally.munition_subjects)})",
+             f"- 대상(object)에만 나오는 객체: "
+             f"{len(tally.object_entities - tally.subjects)}",
+             f"- 지명: {len(tally.object_locations)}개",
+             f"- 지명에 못 붙은 좌표: {len(tally.object_coords)}개",
+             f"- 삭제한 인프라 객체: {len(tally.dropped_names)}개", ""]
+    if tally.object_locations:
+        lines += ["등장 지명: "
+                  + ", ".join(f"`{k}`" for k in sorted(tally.object_locations)),
+                  ""]
+    lines += ["### 술어별 행수", ""]
     for k, v in tally.predicates.most_common():
         lines.append(f"- `{k}`: {v:,}")
 

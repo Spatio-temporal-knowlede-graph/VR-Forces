@@ -40,18 +40,28 @@ def test_ecef_roundtrip():
     assert abs(back.alt - c.alt) < 1e-3
 
 
-def test_golden_points_are_the_source_of_truth(layout, golden_points):
+def test_golden_points_are_the_source_of_truth(layout, rules, golden_points):
     """레이아웃의 golden 지명은 golden 통제점과 좌표가 같아야 한다.
 
     사람이 VR-Forces에서 찍은 점이 정본이고, 레이아웃은 그 사본이다.
     누가 battlefield_layout.json을 손으로 고치면 여기서 걸린다.
+
+    relocate 규칙으로 옮긴 점만 예외다. 그 점들은 golden에서 수확한 뒤 규칙이
+    옮긴 것이라 src가 golden이 아니고, golden 통제점과 좌표도 다르다.
     """
+    relocated = set(rules.get("relocate") or {})
     anchored = [i for i in layout.location_ids()
                 if layout.source_of(i) == "golden"]
-    assert len(anchored) == len(golden_points)
+    assert len(anchored) + len(relocated) == len(golden_points)
     for lid in anchored:
         assert lid in golden_points, lid
         assert ground_distance(layout.coord(lid), golden_points[lid]) < 0.5
+    # 옮긴 점은 golden에서 왔지만 좌표는 규칙이 정한 만큼 떨어져 있어야 한다.
+    for lid, spec in (rules.get("relocate") or {}).items():
+        assert layout.source_of(lid) == "relocated", lid
+        assert lid in golden_points, lid
+        d = ground_distance(layout.coord(lid), golden_points[lid])
+        assert abs(d - float(spec["dist_m"])) < 1.0, (lid, d)
 
 
 def test_every_scenario_location_resolves(layout):

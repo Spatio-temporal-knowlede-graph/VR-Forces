@@ -192,15 +192,17 @@ def check_terrain(layout: BattlefieldLayout,
 
     v2까지는 로컬 미터로 선언한 좌표라 해안선 모델로 바다 배치를 잡아야 했다.
     이제 지명 좌표는 golden에 사람이 찍은 지형점이므로 육지가 보증된다.
-    남는 위험은 규칙으로 민 파생 지점뿐이라, 그것만 사람에게 알린다.
+    남는 위험은 규칙으로 민 점(파생·이동)뿐이라, 그것만 사람에게 알린다.
     """
+    _WHAT = {"derived": "규칙으로 민 파생 지점",
+             "relocated": "relocate 규칙으로 옮긴 golden 지점"}
     out: list[Violation] = []
     for lid in sorted(used_locations):
-        if layout.source_of(lid) == "derived":
+        what = _WHAT.get(layout.source_of(lid))
+        if what:
             out.append(Violation(
                 "G0", "C0.7",
-                f"{lid} 는 규칙으로 민 파생 지점 — 지형(물·급경사) 미확인",
-                REPORT))
+                f"{lid} 는 {what} — 지형(물·급경사) 미확인", REPORT))
     return out
 
 

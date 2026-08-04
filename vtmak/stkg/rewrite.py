@@ -73,6 +73,36 @@ class Tally:
     munitions: int = 0
     munitions_linked: int = 0
 
+    # 등장 객체. 행 수와 달리 '몇 개가 나오는가'를 센다.
+    subjects: set = field(default_factory=set)          # 남은 주체 전부
+    munition_subjects: set = field(default_factory=set)  # 그중 발사체
+    dropped_names: set = field(default_factory=set)      # 지운 인프라 객체
+    object_entities: set = field(default_factory=set)    # object로 등장한 객체
+    object_locations: set = field(default_factory=set)   # object로 등장한 지명
+    object_coords: set = field(default_factory=set)      # 지명에 못 붙은 좌표
+
+    @property
+    def entities(self) -> int:
+        """발사체를 뺀 주체 수. 실제 전투 객체다."""
+        return len(self.subjects) - len(self.munition_subjects)
+
+    @property
+    def seen(self) -> int:
+        """주체든 대상이든 한 번이라도 이름이 나온 객체 수."""
+        return len(self.subjects | self.object_entities)
+
+
+def _is_coord(value: str) -> bool:
+    """'x,y,z' 좌표 폴백인가. locate.snap이 지명에 못 붙였을 때 나온다."""
+    parts = value.split(",")
+    if len(parts) != 3:
+        return False
+    try:
+        [float(p) for p in parts]
+    except ValueError:
+        return False
+    return True
+
 
 def ecef_of(row) -> tuple[float, float, float]:
     return Coord(float(row["latitude"]), float(row["longitude"]),
@@ -103,6 +133,7 @@ def rewrite(rows, layout, uuid_map=None, control_points=None):
         else:
             tally.dropped += 1
             tally.dropped_subjects[f"{row['subject']} ({verdict.value})"] += 1
+            tally.dropped_names.add(row["subject"])
 
     # 발사체 짝짓기는 관측자별로 따로 돈다. 섞으면 다른 시각대의 관측이
     # 하나로 이어진다(실측: M933HE 1이 GROUND_TRUTH와 UAV 2 양쪽에 있다).
@@ -123,7 +154,17 @@ def rewrite(rows, layout, uuid_map=None, control_points=None):
                                                   control_points, links, tally)
         if rec["object"]:
             tally.with_object += 1
+            if rec["object"].startswith("LOC_"):
+                tally.object_locations.add(rec["object"])
+            elif _is_coord(rec["object"]):
+                # 지명에 못 붙은 좌표 폴백. 객체가 아니라 자리다.
+                tally.object_coords.add(rec["object"])
+            else:
+                tally.object_entities.add(rec["object"])
         tally.predicates[rec["predicate"]] += 1
+        tally.subjects.add(rec["subject"])
+        if firing.is_munition(rec["subject"]):
+            tally.munition_subjects.add(rec["subject"])
         out.append(rec)
         tally.out += 1
 

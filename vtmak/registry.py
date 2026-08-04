@@ -36,12 +36,18 @@ class EntityDef:
     initial_location: str
     initial_state: str
     taskable: bool
+    # 이 모델이 VR-Forces에서 실행하지 못하는 task-type. 컨트롤러(=시스템)가
+    # 없으면 "No controller or Controller is disabled"로 실패한다. type_group은
+    # 태스크 템플릿을 고르는 단위라 이보다 굵어서(T-72와 T-80이 같은 그룹인데
+    # find_cover는 T-72만 실패한다) 모델 단위로 따로 둔다.
+    unsupported_tasks: tuple[str, ...] = ()
 
 
 class ClassMap:
     def __init__(self) -> None:
         self._tg: dict[str, str] = {}
         self._w: dict[str, tuple[str, ...]] = {}
+        self._unsup: dict[str, tuple[str, ...]] = {}
 
     @classmethod
     def load(cls, path) -> "ClassMap":
@@ -56,6 +62,10 @@ class ClassMap:
                 cm._w[key] = tuple(
                     w.strip() for w in (row.get("weapons") or "").split("|")
                     if w.strip())
+                cm._unsup[key] = tuple(
+                    t.strip()
+                    for t in (row.get("unsupported_tasks") or "").split(";")
+                    if t.strip())
         return cm
 
     def known(self, entity_class: str) -> bool:
@@ -70,6 +80,10 @@ class ClassMap:
 
     def weapons(self, entity_class: str) -> tuple[str, ...]:
         return self._w.get(norm(entity_class), ())
+
+    def unsupported_tasks(self, entity_class: str) -> tuple[str, ...]:
+        """이 모델이 실행하지 못하는 VR-Forces task-type."""
+        return self._unsup.get(norm(entity_class), ())
 
 
 def collect_locations(events: list[Event]) -> list[str]:
@@ -122,6 +136,8 @@ def build_registry(events: list[Event], class_map: ClassMap,
             initial_location=loc_by_id.get(oid, ""),
             initial_state=state_by_id.get(oid, "대기"),
             taskable=taskable,
+            unsupported_tasks=(class_map.unsupported_tasks(ecls)
+                               if taskable else ()),
         )
     return out
 

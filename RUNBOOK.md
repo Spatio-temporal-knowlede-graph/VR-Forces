@@ -240,8 +240,34 @@ python -c "import sys;sys.path.insert(0,'.');from pathlib import Path;from vtmak
 
 ### E. 사거리 조정
 
-`config/weapon_ranges.csv`. `min_severity=REPORT`면 최소사거리 미달을 막지 않고
-알리기만 한다(현재 155mm 3종이 그렇다).
+`config/weapon_ranges.csv`. `min_severity=REPORT`면 최소사거리 미달이 **G0를**
+막지 않고 알리기만 한다(현재 155mm 3종 + MO-120RT-61 박격포). 심각도와 무관하게
+**미달 사격은 `.pln`에 태스크로 나가지 않는다** — VR-Forces가 실제로 거부하는
+것이 확인됐다(2026-08-04 `vrfSim.log`). 사격을 살리고 싶으면 표를 고칠 게 아니라
+§F로 진지를 물려야 한다.
+
+### F. 진지를 물려 최소사거리를 확보하기
+
+`config/layout_rules.json`의 `relocate`에 지명·축 방위·거리를 적고
+`python scripts/01_harvest_layout.py`를 다시 돌린다.
+
+```json
+"relocate": { "LOC_아군포병진지": { "dir": "남", "dist_m": 1000, "note": "..." } }
+```
+
+`dir`은 전장 축 기준이다(`북` = 적 방향, `남` = 아군 방향). 옮긴 점은
+`src=relocated`가 되어 `C0.7`로 보고된다 — **golden이 주던 육지 보증이 없으니
+GUI에서 물·급경사인지 반드시 눈으로 확인할 것.** 파생 지점의 `base`가 옮겨진
+지명이면 파생 지점도 따라 움직인다.
+
+### G. 어떤 모델이 어떤 task를 못 하는지 등록하기
+
+VR-Forces가 `No controller or Controller is disabled, unable to carry out task X`를
+찍으면 그 모델은 그 task의 컨트롤러가 없는 것이다. `config/entity_class_map.csv`의
+**`unsupported_tasks`** 열에 task-type을 `;`로 나눠 적으면 그 모델에는 태스크를
+만들지 않는다. 같은 `type_group`이라도 모델마다 다르므로(T-72는 `find_cover`
+실패, T-80은 성공) 그룹이 아니라 모델에 적는다. `note`에 실패/보유 수를 같이
+남길 것 — 근거 없는 항목이 쌓이면 시나리오가 소리 없이 비어 간다.
 
 ---
 
@@ -252,11 +278,11 @@ python -c "import sys;sys.path.insert(0,'.');from pathlib import Path;from vtmak
 
 | 코드 | 뜻 | 보통의 대처 |
 |---|---|---|
-| `C0.1` | 최소사거리 미달 | 진지를 멀리 옮기거나 `min_severity` |
+| `C0.1` | 최소사거리 미달 | §4-F로 진지를 물린다. 그대로 두면 그 사격은 태스크가 안 나간다 |
 | `C0.2` | 최대사거리 초과 | 진지를 가깝게 |
-| `C0.3` | 무기체계 미확인 | Patriot 2종. 확인되면 `unverified` 해제 |
+| `C0.3` | 무기체계 미확인 | Patriot 2종. 지상 간접사격은 불가로 확인됐다(§4-G) |
 | `C0.4` | 사격 능력 없는 모델 | 원문에서 그 객체의 사격 문장을 뺀다 |
-| `C0.7` | 파생 지점 — 지형 미확인 | GUI에서 물·급경사인지 눈으로 확인 |
+| `C0.7` | 파생·이동 지점 — 지형 미확인 | GUI에서 물·급경사인지 눈으로 확인 |
 | `C1.1` | 문장 미매칭 | §3의 문장 틀과 대조 |
 | `C1.2` | 레이아웃에 없는 지명 | §4-B |
 | `C1.3` | 사전에 없는 객체 | 원문의 객체 표기 오타 |
@@ -264,7 +290,7 @@ python -c "import sys;sys.path.insert(0,'.');from pathlib import Path;from vtmak
 | `C3.1` `C3.2` | DIS 없음 / 골든 레코드 없음 | §4-C |
 | `C3.3` | 좌표 미할당 | 지명이 레이아웃에 없다 |
 | `C3.4` `C3.7` | uuid 중복 / 참조 미해소 | 코드 결함. 그대로 알려줄 것 |
-| `C3.5` | 태스크 생성 실패 | 대개 미분류(Patriot) |
+| `C3.5` | 태스크 미저작 | `REPORT`면 일부러 뺀 것(§4-F·§4-G). `BLOCK`이면 결함 |
 | `C3.6` | 괄호 불균형 | `task_catalog`의 S-expression 오타 |
 | `C3.8` | 그 모델에 없는 무기 | §4-C |
 
@@ -305,7 +331,14 @@ python scripts/05_scnx_timetable.py        # 실제 .scnx를 되읽어 객체별
 | VR-Forces가 무겁다 | `roster.json`의 `target_entities`를 내린다 |
 | 객체가 가만히 있다 | `05`로 그 객체에 태스크가 있는지, 무기 이름이 맞는지 |
 | 객체가 땅속·공중 | Ground Clamping이 꺼져 있다 |
-| 객체가 물 위에 있다 | 그 지명이 파생 지점인지 확인(`C0.7`), 골든에서 다시 찍는다 |
+| 객체가 물 위에 있다 | 그 지명이 파생·이동 지점인지 확인(`C0.7`), 골든에서 다시 찍는다 |
+| `No controller ...` 오류 | 그 (모델, task) 조합을 §4-G에 등록한다 |
+| `less than min range` 오류 | §4-F로 진지를 물린다 |
 
-미해결로 남아 있는 것 두 가지는 README의 "좌표" 절과 "검증 게이트" 절에 적혀
-있다 — 155mm 최소사거리 미달 8건, 파생 지점 지형 미확인 6건.
+**AI Enabled = No로 두는 것이 정상이다.** 매뉴얼 34.3대로 충돌회피·자동사격·
+피격반응만 꺼지고 task는 그대로 돈다(2026-08-04 실측: 328객체 중 294객체가
+AI Off 상태로 오류 없이 수행). 켜면 계획에 없는 교전이 일어나 시나리오가 일찍
+끝난다. 생성기는 `AIEnabled True`로 쓰므로 VR-Forces에서 직접 끈다.
+
+미해결로 남아 있는 것은 README의 "좌표" 절과 "검증 게이트" 절에 적혀 있다 —
+최소사거리 미달 2건(중앙 킬존), 지형 미확인 8건(파생 6 + 이동 2).

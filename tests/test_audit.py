@@ -117,26 +117,32 @@ def test_rows_cover_every_entity_and_every_step(built):
 def test_dropped_events_are_visible_not_silent(built):
     """저작 못 한 이벤트는 표에 사유와 함께 남는다 — 조용히 사라지지 않는다.
 
-    ver70은 전 이벤트가 저작되므로 실제 누락은 0건이다. 규칙이 살아 있는지
-    보려고 pln 없는 스텝을 하나 지어 넣는다.
+    VR-Forces가 실행을 거부하는 것이 실측된 조합은 .pln에 안 나가지만, 표에는
+    사유를 달고 남아야 한다. 그래야 '왜 이 객체가 안 움직이지'를 표에서 찾는다.
     """
     spec, contents, events = built
     tasks, objects, _ = build_rows(spec, contents, events)
-    assert [t for t in tasks if not t.in_scnx] == []
-    assert [o.object_id for o in objects if o.n_dropped] == []
+    dropped = [t for t in tasks if not t.in_scnx]
+    assert dropped, "실측으로 걸러내는 조합이 하나도 없다 — 필터가 죽었다"
+    assert all(t.note for t in dropped), \
+        [t.event_id for t in dropped if not t.note]
 
     oid = spec.entities[0].object_id
     broken = PlanStep(event_id="ETEST", time_s=0, template="moveTo",
                       task_kind="move", action_label=None, pln=None,
                       issues=["템플릿 없음"])
     saved = spec.entity_plans.get(oid, [])
+    before = {o.object_id: o.n_dropped for o in objects}
     spec.entity_plans[oid] = list(saved) + [broken]
     try:
         tasks, objects, _ = build_rows(spec, contents, events)
         dropped = [t for t in tasks if not t.in_scnx]
-        assert [t.event_id for t in dropped] == ["ETEST"]
+        assert "ETEST" in [t.event_id for t in dropped]
         assert all(t.note for t in dropped)
-        assert [o.object_id for o in objects if o.n_dropped] == [oid]
+        now = {o.object_id: o.n_dropped for o in objects}
+        assert now[oid] == before[oid] + 1
+        assert {k: v for k, v in now.items() if k != oid} == \
+            {k: v for k, v in before.items() if k != oid}
     finally:
         spec.entity_plans[oid] = saved
 

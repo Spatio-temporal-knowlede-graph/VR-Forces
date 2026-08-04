@@ -19,9 +19,9 @@ GAZ-66 Truck,,,,,0,,비무장 수송
 M35 Truck,,,,,0,,비무장 수송
 M1028 FMTV Canvas Cargo Truck,,,,,0,,비무장 수송
 M1083A1 FMTV Flatbed Truck,,,,,0,,비무장 수송
-MO-120RT-61 Mortar,,,1100,8100,0,,120mm 박격포
-M109 Howitzer,,,2000,18000,0,REPORT,155mm 자주포. golden 지형 폭이 좁아 2km 확보 불가 — 최소사거리 미달을 BLOCK 대신 REPORT로 둔다(사용자 결정 2026-08-03)
-AHS Krab Howitzer,,,2000,40000,0,REPORT,155mm 자주포. golden 지형 폭이 좁아 2km 확보 불가 — 최소사거리 미달을 BLOCK 대신 REPORT로 둔다(사용자 결정 2026-08-03)
-CAESAR SP Howitzer,,,2000,42000,0,REPORT,155mm 자주포. golden 지형 폭이 좁아 2km 확보 불가 — 최소사거리 미달을 BLOCK 대신 REPORT로 둔다(사용자 결정 2026-08-03)
-M901 Patriot Launcher,,,,,1,,지상 간접사격 성립 여부 미확인 (설계 스펙 §8.3)
-MIM-104 Patriot Launcher,,,,,1,,지상 간접사격 성립 여부 미확인 (설계 스펙 §8.3)
+MO-120RT-61 Mortar,,,1200,8100,0,REPORT,"120mm 박격포. 교리값 1100m를 2026-08-04 vrfSim.log 실측으로 올렸다 — 1154m 사격이 Could not find an allowable muzzle speed and elevation angle to reach the target로 실패했고 1292m 사격은 정상이었다. 실제 하한은 1154~1292m 사이이며 안전하게 1200으로 둔다. min_severity가 REPORT인 것은 이 미달을 레이아웃으로 고칠 수 없기 때문이다 — 아군박격포진지와 중앙킬존은 둘 다 golden 지형점이고, 진지를 물리면 다른 표적이 최대사거리 밖으로 나간다. 미달 사격 1건(FRMORT004→중앙킬존 1144m)은 plan.py가 태스크를 만들지 않는다(사용자 결정 2026-08-04)"
+M109 Howitzer,,,2000,18000,0,REPORT,"155mm 자주포. 2026-08-04 vrfSim.log 실측으로 2000m가 VR-Forces의 실제 하한임이 확인됐다(Indirect fire target less than min range (2000 m)). BLOCK이 아니라 REPORT인 것은 파이프라인을 멈추지 않기 위해서이고, 미달 사격은 plan.py가 태스크를 만들지 않는다"
+AHS Krab Howitzer,,,2000,40000,0,REPORT,"155mm 자주포. 2026-08-04 vrfSim.log 실측으로 2000m가 VR-Forces의 실제 하한임이 확인됐다(Indirect fire target less than min range (2000 m)). BLOCK이 아니라 REPORT인 것은 파이프라인을 멈추지 않기 위해서이고, 미달 사격은 plan.py가 태스크를 만들지 않는다"
+CAESAR SP Howitzer,,,2000,42000,0,REPORT,"155mm 자주포. 2026-08-04 vrfSim.log 실측으로 2000m가 VR-Forces의 실제 하한임이 확인됐다(Indirect fire target less than min range (2000 m)). BLOCK이 아니라 REPORT인 것은 파이프라인을 멈추지 않기 위해서이고, 미달 사격은 plan.py가 태스크를 만들지 않는다"
+M901 Patriot Launcher,,,,,1,,"지상 간접사격 불가 — 2026-08-04 vrfSim.log 실측. FFE-On-Location이 ""No controller or Controller is disabled""로 실패했다(간접사격 포 자체가 없다). entity_class_map.csv의 unsupported_tasks가 태스크를 만들지 않게 막는다"
+MIM-104 Patriot Launcher,,,,,1,,"지상 간접사격 불가 — 2026-08-04 vrfSim.log 실측. FFE-On-Location이 ""No controller or Controller is disabled""로 실패했다(간접사격 포 자체가 없다). entity_class_map.csv의 unsupported_tasks가 태스크를 만들지 않게 막는다"

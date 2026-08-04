@@ -7,3 +7,10 @@ __pycache__/
 yewon_test/*.scnx
 campaign/*.scnx
 VR-Forces catalog/
+
+# GitHub는 파일 하나가 100 MB를 넘으면 push를 거부한다(하드 리밋).
+# ground_truth 전량은 20260804판부터 400 MB급이라 저장소에 못 둔다. 시뮬레이터
+# 재실행으로만 얻을 수 있고 후처리 산출도 마찬가지다. 새 판이 100 MB를 넘으면
+# 여기에 파일명을 추가할 것.
+build/csv/ground_truth_20260804_dataset.csv
+build/stkg/ground_truth_20260804_annotated.csv

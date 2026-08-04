@@ -14,7 +14,7 @@ from vtmak.roster import RosterPlan, filter_events, select_roster
 from vtmak.scnx.catalog import DisCatalog, TaskCatalog
 from vtmak.scnx.gates import check_g3, weapons_in
 from vtmak.scnx.golden import Golden
-from vtmak.scnx.plan import PlanStep
+from vtmak.scnx.plan import SKIP_UNSUPPORTED, PlanStep
 from vtmak.scnx.pack import ensure_golden
 from vtmak.scnx.spec import build_spec
 from vtmak.scnx.writer import get_writer
@@ -60,14 +60,19 @@ def test_g3_has_no_blocking_violations(built):
 
 
 def test_g3_flags_unauthored_steps_by_classification(built):
-    """저작 못 한 스텝은 C3.5로 나간다 — 미분류 모델이면 REPORT, 아니면 BLOCK.
+    """저작 못 한 스텝은 C3.5로 나간다 — 의도한 스킵이면 REPORT, 아니면 BLOCK.
 
-    ver70 명부는 전 모델이 분류돼 있어 실제 C3.5는 0건이다. 규칙이 살아 있는지
-    보려고 pln 없는 스텝을 하나 지어 넣고 두 갈래를 다 밟는다.
+    의도한 스킵은 둘이다. (1) skip_reason이 붙은 것 — VR-Forces가 실행을
+    거부함이 실측된 조합. (2) 미분류 모델 — 무기체계가 확정되지 않은 것.
+    나머지는 저작 결함이라 BLOCK이다. 규칙이 살아 있는지 보려고 pln 없는
+    스텝을 하나 지어 넣고 두 갈래를 다 밟는다.
     """
     spec, dis = built
     g = Golden.load(GOLDEN)
-    assert [x for x in check_g3(spec, g, dis) if x.code == "C3.5"] == []
+    # 실제 산출에 남는 C3.5는 전부 의도한 스킵이라 REPORT여야 한다.
+    existing = [x for x in check_g3(spec, g, dis) if x.code == "C3.5"]
+    assert existing, "실측으로 걸러내는 조합이 하나도 없다 — 필터가 죽었다"
+    assert {x.severity for x in existing} == {"REPORT"}
 
     ent = spec.entities[0]
     broken = PlanStep(event_id="ETEST", time_s=0, template="moveTo",
@@ -76,14 +81,24 @@ def test_g3_flags_unauthored_steps_by_classification(built):
     saved_steps = spec.entity_plans.get(ent.object_id, [])
     saved_group = ent.type_group
     spec.entity_plans[ent.object_id] = list(saved_steps) + [broken]
-    try:
-        v = [x for x in check_g3(spec, g, dis) if x.code == "C3.5"]
-        assert [x.severity for x in v] == ["BLOCK"]
-        assert v[0].detail.startswith(f"{ent.object_id} ETEST")
 
+    def injected():
+        return [x for x in check_g3(spec, g, dis)
+                if x.code == "C3.5" and "ETEST" in x.detail]
+
+    try:
+        # (1) 사유 없는 저작 실패 = 결함 → BLOCK
+        assert [x.severity for x in injected()] == ["BLOCK"]
+        assert injected()[0].detail.startswith(f"{ent.object_id} ETEST")
+
+        # (2) 실행 불가가 실측된 조합 → REPORT
+        broken.skip_reason = SKIP_UNSUPPORTED
+        assert [x.severity for x in injected()] == ["REPORT"]
+        broken.skip_reason = ""
+
+        # (3) 미분류 모델 → REPORT
         ent.type_group = UNCLASSIFIED
-        v = [x for x in check_g3(spec, g, dis) if x.code == "C3.5"]
-        assert [x.severity for x in v] == ["REPORT"]
+        assert [x.severity for x in injected()] == ["REPORT"]
     finally:
         ent.type_group = saved_group
         spec.entity_plans[ent.object_id] = saved_steps

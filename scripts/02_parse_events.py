@@ -20,8 +20,7 @@ from vtmak.parser import PatternMap, parse_scenario               # noqa: E402
 from vtmak.paths import SCENARIO                                   # noqa: E402
 from vtmak.ranges import WeaponRanges                             # noqa: E402
 from vtmak.registry import ClassMap, build_registry               # noqa: E402
-from vtmak.roster import (RosterPlan, filter_events,              # noqa: E402
-                          select_roster, unit_of)
+from vtmak.roster import unit_of                                  # noqa: E402
 
 CONFIG = ROOT / "config"
 SRC = SCENARIO
@@ -39,16 +38,12 @@ def main() -> int:
     print(f"문장 {result.sentence_count} · 이벤트 {len(result.events)} · "
           f"객체 {len(full_registry)}")
 
-    # 명부 감축 — VR-Forces 성능을 위해 부대별로 솎는다(교전 구조는 보존).
-    plan = RosterPlan.load(CONFIG / "roster.json")
-    # task를 만드는 이벤트만 수확량으로 센다(이동·사격·엄폐 등, noop 제외).
-    task_ids = {e.event_id for e in result.events
-                if pmap.task_kind(e.template, e.action_label) not in ("", "noop")}
-    keep = select_roster(result.events, full_registry, plan, task_ids)
-    result.events = filter_events(result.events, keep)
-    registry = {o: d for o, d in full_registry.items() if o in keep}
-    units = len({unit_of(o) for o in keep})
-    print(f"명부 감축 → 객체 {len(registry)} ({units}개 부대) · "
+    # 명부 감축을 하지 않는다. 원문의 객체를 하나도 빼지 않고 그대로 쓴다.
+    # VR-Forces 성능 때문에 부대별로 솎던 단계였는데, 객체가 줄면 원문과
+    # 대조가 안 되고 STKG에서도 빠진 객체를 되살릴 방법이 없다.
+    registry = full_registry
+    units = len({unit_of(o) for o in registry})
+    print(f"명부 감축 없음 → 객체 {len(registry)} ({units}개 부대) · "
           f"이벤트 {len(result.events)}")
 
     OUT.mkdir(parents=True, exist_ok=True)
