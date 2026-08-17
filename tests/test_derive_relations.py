@@ -3,6 +3,7 @@
 실측 기대치(2026-08-07, build/events/battle.jsonl 3,000건)는 데이터를 세어
 얻은 값이다. 숫자가 틀어지면 규칙이 아니라 입력이 바뀐 것이니 둘 다 본다.
 """
+import json
 from collections import Counter
 from pathlib import Path
 
@@ -10,10 +11,15 @@ import pytest
 
 from vtmak.derive.config import DeriveRules
 from vtmak.derive.events import EventIndex
+from vtmak.derive.orbat_relations import (r10_unit_moves, r11_unit_occupies,
+                                          r12_unit_fires)
 from vtmak.derive.relations import (r1r2_hit_state, r3_direct_fire,
                                     r4_indirect_fire, r6_unit_suppressed,
                                     r7_precedes, unit_members)
+from vtmak.geometry import BattlefieldLayout
+from vtmak.orbat import OrbatConfig, build_orbat
 from vtmak.parser import Event
+from vtmak.registry import ClassMap, build_registry
 
 ROOT = Path(__file__).resolve().parents[1]
 EVENTS = ROOT / "build" / "events" / "battle.jsonl"
@@ -28,6 +34,20 @@ def idx():
 @pytest.fixture(scope="module")
 def rules():
     return DeriveRules.load(CFG / "derive_rules.csv")
+
+
+@pytest.fixture(scope="module")
+def orbat():
+    """R10~R12를 불변식 테스트에 넣기 위한 편제. tests/test_derive_orbat.py의
+    픽스처와 같은 구성이다 — 정적 객체 7개는 BattlefieldLayout으로 뺀다.
+    """
+    evs = [Event(**{k: v for k, v in json.loads(l).items()
+                    if k != "source_line"})
+           for l in open(EVENTS, encoding="utf-8")]
+    layout = BattlefieldLayout.load(CFG / "battlefield_layout.json")
+    reg = build_registry(evs, ClassMap.load(CFG / "entity_class_map.csv"),
+                         layout.static_ids())
+    return build_orbat(reg, OrbatConfig.load(CFG / "orbat.json"))
 
 
 def ev(event_id, time_s, predicate, **kw):
@@ -368,14 +388,23 @@ def test_sources_and_sinks_are_consumed_in_time_order(idx):
 
 @pytest.mark.parametrize("rule,expected", [
     ("r1r2", {"R1", "R2"}), ("r3", {"R3"}), ("r4", {"R4"}), ("r6", {"R6"}),
-    ("r7", {"R7"})])
-def test_every_relation_carries_layer_rule_and_provenance(idx, rules, rule,
-                                                          expected):
+    ("r7", {"R7"}), ("r10", {"R10"}), ("r11", {"R11"}), ("r12", {"R12"})])
+def test_every_relation_carries_layer_rule_and_provenance(idx, rules, orbat,
+                                                          rule, expected):
+    """R10~R12도 이 불변식에서 빠지면 안 된다 — 이 셋은 이전에 여기 빠져
+    있었는데, 그 사이 provenance에 event_id 대신 구성원 id를 넣는 실수가
+    한동안 초록으로 남았다. 구성원 id는 `idx.ids()`(event_id 집합) 밖의
+    값이라 `set(r.provenance) <= known`이 바로 걸린다 — 이 테스트가 있었다면
+    그 실수를 즉시 잡았을 것이다.
+    """
     res = {"r1r2": lambda: r1r2_hit_state(idx, rules),
            "r3": lambda: r3_direct_fire(idx),
            "r4": lambda: r4_indirect_fire(idx, rules),
            "r6": lambda: r6_unit_suppressed(idx, rules),
-           "r7": lambda: r7_precedes(idx, rules)}[rule]()
+           "r7": lambda: r7_precedes(idx, rules),
+           "r10": lambda: r10_unit_moves(idx, orbat, rules),
+           "r11": lambda: r11_unit_occupies(idx, orbat, rules),
+           "r12": lambda: r12_unit_fires(idx, orbat, rules)}[rule]()
     known = idx.ids()
     assert res.relations
     for r in res.relations:

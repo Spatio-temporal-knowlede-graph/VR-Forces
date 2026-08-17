@@ -109,16 +109,33 @@ def test_r10_subject_is_a_unit(idx, orbat, rules):
 
 
 def test_r10_keys_on_time_not_just_unit_and_destination(idx, orbat, rules):
-    """시각을 접기 키에서 빼면 같은 (소대, 목적지)가 여러 시각에 걸쳐도
-    한 건으로 합쳐진다 — 백마고지가 걸린 바로 그 함정이다. 실측값(65건,
-    고유 (소대,목적지) 쌍 63개)은 그 둘이 다르다는 것 자체가 시각이 키에
-    실제로 들어가 있다는 증거다. 시각을 빼면 106건으로 바뀐다(직접 확인함).
+    """국면을 접기 키에서 빼면(모든 시각을 하나로) 같은 (소대, 목적지)가
+    한 건으로 합쳐진다 — 백마고지가 걸린 바로 그 함정이다. 실측값
+    (2026-08-18, unit_fold_window_s=5: 119건, 고유 (소대,목적지) 쌍 106개)은
+    그 둘이 다르다는 것 자체가 국면 구분이 산출물에 남아 있다는 증거다.
+    창을 300초로 올리면(서로 다른 국면이 합쳐짐) 106건으로 줄어 이 부등식이
+    깨진다(직접 확인함 — 아래 리뷰 회귀 확인 항목 참고).
     """
     rels = r10_unit_moves(idx, orbat, rules).relations
     pairs = {(r.subject, r.object) for r in rels}
-    assert len(rels) == 65
-    assert len(pairs) == 63
+    assert len(rels) == 119
+    assert len(pairs) == 106
     assert len(rels) > len(pairs)
+
+
+def test_r10_window_absorbs_report_jitter_across_the_whole_platoon(idx, orbat,
+                                                                    rules):
+    """1초 입도(창=0)의 결함 — 리뷰에서 지적된 사실을 고정한다.
+
+    20명짜리 보병소대가 통째로 이동해도 보고가 60·61·62초로 갈리면 창=0에서는
+    과반을 못 채운다. 리뷰 실측: 52개 소대 중 16개(20명 보병소대 8개 포함)가
+    '실제로 이동했는데 R10이 0건'이었다. unit_fold_window_s=5로 그 16개가
+    전부 사라지는지 여기서 확인한다.
+    """
+    move_platoons = {orbat.platoon_of(e.actor) for e in idx.events
+                     if e.template == "moveTo" and orbat.platoon_of(e.actor)}
+    subjects = {r.subject for r in r10_unit_moves(idx, orbat, rules).relations}
+    assert move_platoons - subjects == set()
 
 
 def test_r11_occupies_a_place(idx, orbat, rules):

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from .relations import Relation, RuleResult
+from .relations import Relation, RuleResult, unit_members
 
 # 편제표가 선언한 값. 관측에서 파생한 relations.LAYER("derived")와 섞이면
 # 어느 쪽이 만든 값인지 산출물에서 되물어야 한다.
@@ -62,27 +62,53 @@ def r9_task_organization(orbat) -> RuleResult:
 # 쓰면 "편제표가 이렇게 말했다"는 거짓 근거가 붙는다.
 
 
-def _by_platoon(index, orbat):
-    """소대 → 이벤트에 등장한 구성원. 분모는 정원이 아니라 이 수다.
+def _cluster_by_time(items, window):
+    """(시각, actor, event_id) 목록을 시각 간격이 window 이내면 한 군집으로 묶는다.
 
-    정원으로 나누면 명부 감축이 비율을 바꾼다(R6가 같은 이유로 그렇게 한다).
+    간격이 window를 넘으면 새 군집을 연다. moveTo 실측 간격은 보고 지터
+    1초와 실제 국면 전환 127~276초 사이가 뚜렷이 갈리고 그 사이엔 관측값이
+    아예 없다 — window를 그 틈 어디에 둬도 결과가 같다. 지터를 확실히
+    삼키면서 국면 전환보다는 훨씬 작은 값을 쓰면 된다.
     """
-    seen: dict[str, set] = defaultdict(set)
-    for e in index.events:
-        pl = orbat.platoon_of(e.actor) if e.actor else None
-        if pl:
-            seen[pl].add(e.actor)
-    return seen
+    items = sorted(items)
+    clusters: list[list[tuple[int, str, str]]] = []
+    cur: list[tuple[int, str, str]] = []
+    last_t = None
+    for t, actor, eid in items:
+        if cur and t - last_t > window:
+            clusters.append(cur)
+            cur = []
+        cur.append((t, actor, eid))
+        last_t = t
+    if cur:
+        clusters.append(cur)
+    return clusters
 
 
-def _fold(index, orbat, ratio, templates, target_of, rule_id, predicate):
-    """구성원 과반이 같은 시각·같은 대상에 대해 같은 일을 하면 부대 사실이다.
+def _fold(index, orbat, rules, ratio, window, templates, target_of, rule_id,
+         predicate):
+    """구성원 과반이 같은 국면·같은 대상에 대해 같은 일을 하면 부대 사실이다.
 
-    시각을 키에 넣는다. 넣지 않으면 전 구간의 행동이 한 건으로 접혀 시간축이
-    사라지고, 그 순간 백마고지처럼 '안 변하는 관계'가 된다.
+    '같은 국면'은 정확히 같은 초(1초 입도)가 아니라 시각 간격이 window 이내인
+    보고 묶음이다. 1초 입도로 접으면 20명짜리 소대가 60·61·62초에 나눠
+    보고돼 과반을 못 채우는 경우가 생긴다 — 그러면 살아남는 값은 대개
+    구성원 1~2명짜리 소규모 편성뿐이라, note가 경고한 "소수의 이동이 부대
+    이동으로 읽히는" 왜곡이 그대로 재현된다. window를 늘려 보고 지터를
+    삼키되, 서로 다른 국면끼리 묶이지 않도록 국면 전환 간격보다는 훨씬
+    작게 둔다(threshold `unit_fold_window_s`, config/derive_rules.csv).
+
+    분모는 `unit_members(index, rules, orbat)`를 그대로 쓴다 — R6와 같은
+    이유다. actor만 세면(맞기만 하고 쏘지 않는 구성원처럼) 이벤트에서
+    다른 역할로만 등장하는 구성원이 분모에서 빠질 수 있다.
+
+    provenance는 그 군집을 이룬 이벤트들의 event_id다. R1~R7과 같은 계약을
+    지킨다 — 이 규칙은 이벤트를 읽으므로 event_id가 있고, 구성원 id를
+    대신 넣으면 원문 문장까지 되짚을 길이 끊긴다. 부수 효과로 접힌 시각이
+    event_id를 통해 복원 가능해진다 — 시각 자체를 Relation에 담지 않아도
+    되는 이유다.
     """
-    seen = _by_platoon(index, orbat)
-    groups: dict[tuple[str, int, str], set] = defaultdict(set)
+    members = unit_members(index, rules, orbat)
+    groups: dict[tuple[str, str], list[tuple[int, str, str]]] = defaultdict(list)
     for e in index.events:
         if e.template not in templates:
             continue
@@ -90,27 +116,31 @@ def _fold(index, orbat, ratio, templates, target_of, rule_id, predicate):
         target = target_of(e)
         if not pl or not target:
             continue
-        groups[(pl, e.time_s, target)].add(e.actor)
+        groups[(pl, target)].append((e.time_s, e.actor, e.event_id))
 
     rels = []
-    for (pl, _t, target), actors in sorted(groups.items()):
-        roster = seen.get(pl) or set()
-        if not roster or len(actors) / len(roster) < ratio:
-            continue
-        rels.append(Relation(rule_id, predicate, pl, target,
-                             tuple(sorted(actors))))
+    for (pl, target), items in sorted(groups.items()):
+        roster = set(members.get(pl, ()))
+        for cluster in _cluster_by_time(items, window):
+            actors = {a for _, a, _ in cluster}
+            if not roster or len(actors) / len(roster) < ratio:
+                continue
+            event_ids = tuple(sorted({eid for _, _, eid in cluster}))
+            rels.append(Relation(rule_id, predicate, pl, target, event_ids))
     return RuleResult(tuple(rels))
 
 
 def r10_unit_moves(index, orbat, rules) -> RuleResult:
     """movesToward(부대, 지명) — 구성원 과반이 같은 곳으로 갈 때."""
-    return _fold(index, orbat, rules.threshold("unit_move_ratio"),
+    return _fold(index, orbat, rules, rules.threshold("unit_move_ratio"),
+                 rules.threshold("unit_fold_window_s"),
                  {"moveTo"}, lambda e: e.dst, "R10", "movesToward")
 
 
 def r11_unit_occupies(index, orbat, rules) -> RuleResult:
     """occupies(부대, 지명) — 구성원 과반이 그 자리에 멈춰 있을 때."""
-    return _fold(index, orbat, rules.threshold("unit_occupy_ratio"),
+    return _fold(index, orbat, rules, rules.threshold("unit_occupy_ratio"),
+                 rules.threshold("unit_fold_window_s"),
                  {"stopAt", "stayAt"}, lambda e: e.location, "R11", "occupies")
 
 
@@ -119,7 +149,15 @@ def r12_unit_fires(index, orbat, rules) -> RuleResult:
 
     대상은 엔티티일 수도 지역 표기 객체일 수도 있다. 가리지 않는다 — 무엇을
     쐈는지는 대상 id가 말한다.
+
+    실측 한계: 이 데이터에서 (소대, 대상) 쌍은 directFireAt·indirectFireAt을
+    합쳐도 전부 시각이 유일하다(98개 군집 전부 크기 1) — window를 아무리
+    조정해도 묶일 짝이 없다. 그래서 R12는 접지 않는다. 사실상 R4가 이미
+    내는 firesUpon(사격자, 대상)의 사격자를 그 소속 소대로 다시 쓰는
+    규칙이다. 그래도 부대가 주어인 fact라는 값은 있다 — 백마고지는 그런
+    fact가 0건이었다.
     """
-    return _fold(index, orbat, rules.threshold("unit_fire_ratio"),
+    return _fold(index, orbat, rules, rules.threshold("unit_fire_ratio"),
+                 rules.threshold("unit_fold_window_s"),
                  {"directFireAt", "indirectFireAt"}, lambda e: e.target,
                  "R12", "firesUpon")
