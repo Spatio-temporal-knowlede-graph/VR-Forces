@@ -17,6 +17,13 @@ from .relations import Relation, RuleResult
 # 어느 쪽이 만든 값인지 산출물에서 되물어야 한다.
 LAYER_ORBAT = "orbat"
 
+# R8·R9의 provenance. R1~R7은 event_id를 근거로 대 원문 문장까지 되짚을 수
+# 있지만, 이 둘은 이벤트를 안 읽는다 — 근거가 될 event_id가 애초에 없다.
+# 대신 그 값을 실제로 선언한 파일을 가리킨다. (u.unit_id,)나 (a, b)처럼
+# 관계 자신의 subject/object를 provenance로 되풀이하면 "이 사실의 근거는
+# 이 사실"이라는 동어반복이 되어 추적에 쓸모가 없다.
+ORBAT_CONFIG_PATH = "config/orbat.json"
+
 
 def r8_part_of(orbat) -> RuleResult:
     """partOf(엔티티, 소대) · partOf(소대, 중대) · partOf(중대, 대대).
@@ -28,10 +35,10 @@ def r8_part_of(orbat) -> RuleResult:
     for u in orbat.units():
         for oid in u.members:
             rels.append(Relation("R8", "partOf", oid, u.unit_id,
-                                 (u.unit_id,), LAYER_ORBAT))
+                                 (ORBAT_CONFIG_PATH,), LAYER_ORBAT))
         if u.parent:
             rels.append(Relation("R8", "partOf", u.unit_id, u.parent,
-                                 (u.parent,), LAYER_ORBAT))
+                                 (ORBAT_CONFIG_PATH,), LAYER_ORBAT))
     return RuleResult(tuple(rels))
 
 
@@ -39,7 +46,9 @@ def r9_task_organization(orbat) -> RuleResult:
     """supports·reinforces. 원문에 근거가 없어 편제표가 선언한 값이다."""
     rels = []
     for a, b in orbat.supports():
-        rels.append(Relation("R9", "supports", a, b, (a, b), LAYER_ORBAT))
+        rels.append(Relation("R9", "supports", a, b, (ORBAT_CONFIG_PATH,),
+                             LAYER_ORBAT))
     for a, b in orbat.reinforces():
-        rels.append(Relation("R9", "reinforces", a, b, (a, b), LAYER_ORBAT))
+        rels.append(Relation("R9", "reinforces", a, b, (ORBAT_CONFIG_PATH,),
+                             LAYER_ORBAT))
     return RuleResult(tuple(rels))

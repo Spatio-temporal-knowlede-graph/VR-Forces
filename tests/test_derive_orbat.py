@@ -59,6 +59,13 @@ def test_r8_is_layered_as_orbat(orbat):
 
 
 def test_r9_uses_only_declared_pairs(orbat):
+    """개수(Counter)만이 아니라 (subject, object) 쌍 자체가 일치해야 한다.
+
+    술어별 개수만 맞춰서는 한 쌍의 subject/object가 뒤바뀌어도 통과한다 —
+    오늘은 supports 5·reinforces 3으로 개수가 달라 우연히 걸리지 않을
+    뿐이다. 그래서 쌍 집합을 orbat.supports()/reinforces()와 그대로
+    맞춘다.
+    """
     rels = r9_task_organization(orbat).relations
     assert Counter(r.predicate for r in rels) == {
         "supports": len(orbat.supports()),
@@ -66,3 +73,8 @@ def test_r9_uses_only_declared_pairs(orbat):
     ids = {u.unit_id for u in orbat.units()}
     for r in rels:
         assert r.subject in ids and r.object in ids
+
+    got = {p: {(r.subject, r.object) for r in rels if r.predicate == p}
+          for p in ("supports", "reinforces")}
+    assert got["supports"] == set(orbat.supports())
+    assert got["reinforces"] == set(orbat.reinforces())
