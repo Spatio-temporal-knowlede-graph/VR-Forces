@@ -119,6 +119,43 @@ def test_task_organization_targets_exist(orbat):
         assert b in ids, b
 
 
+def _headcount(orbat, unit_id: str) -> int:
+    """unit_id 예하 모든 소대원 수를 실제로 세어 더한다.
+
+    config에 적힌 인원수를 그대로 읽지 않고 orbat 구조(소대 members)에서
+    다시 세는 이유: F1 리뷰에서 orbat.json의 EN reinforces 두 쌍이 스펙과
+    뒤바뀐 채로 통과했던 것은, 기존 테스트가 config 값과 config 값을
+    비교하거나(test_r9_uses_only_declared_pairs) id 존재만 봐서
+    (test_task_organization_targets_exist) 의미론적 오류를 못 잡았기
+    때문이다. 여기서는 orbat이 실제로 구성한 소대원 수로 크기를 재서,
+    쌍이 다시 뒤바뀌면 이 테스트가 죽도록 한다.
+    """
+    return sum(len(u.members) for u in orbat.units()
+              if u.echelon == "소대" and unit_id in orbat.chain(u.unit_id))
+
+
+def test_reinforces_pairs_the_larger_armor_company_with_the_larger_infantry_company(
+        orbat):
+    """이 배치의 의도: 규모가 큰 주공(보병중대)에 더 강한 전차 증원이 붙는다.
+
+    스펙 §3.4: 전차중대(적북측접근로, 12대) → 보병중대 1(60명, 주공),
+    전차중대(북측예비방어선, 5대) → 보병중대 2(40명, 후속). 두 쌍이
+    뒤바뀌면(F1에서 실제로 그랬다) "더 큰 전차중대가 더 큰 보병중대를
+    증원한다"는 이 불변식이 깨진다 — 숫자 하드코드가 아니라 구조적으로
+    확인한다.
+    """
+    en_pairs = [(a, b) for a, b in orbat.reinforces() if "-EN-" in a]
+    assert len(en_pairs) == 2
+    sized = [(_headcount(orbat, a), _headcount(orbat, b)) for a, b in en_pairs]
+    (a1, b1), (a2, b2) = sized
+    assert a1 != a2 and b1 != b2, "두 전차중대·두 보병중대 규모가 같으면 이 " \
+        "불변식이 공허해진다"
+    assert (a1 > a2) == (b1 > b2), (
+        "더 큰 전차중대가 더 큰 보병중대를 증원해야 한다", sized)
+    #  2026-08-18 실측 고정값: 12대→60명, 5대→40명.
+    assert sorted(sized) == [(5, 40), (12, 60)]
+
+
 def test_orbat_config_requires_supports_and_reinforces(tmp_path):
     """supports/reinforces는 .get(key, [])가 아니라 필수 키다.
 

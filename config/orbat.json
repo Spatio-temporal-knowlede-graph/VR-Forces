@@ -60,7 +60,7 @@
   ],
   "reinforces": [
     ["UNIT-FR-ARM-CO2", "UNIT-FR-INF-CO1"],
-    ["UNIT-EN-ARM-CO1", "UNIT-EN-INF-CO1"],
-    ["UNIT-EN-ARM-CO2", "UNIT-EN-INF-CO2"]
+    ["UNIT-EN-ARM-CO2", "UNIT-EN-INF-CO1"],
+    ["UNIT-EN-ARM-CO1", "UNIT-EN-INF-CO2"]
   ]
 }

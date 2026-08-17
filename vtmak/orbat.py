@@ -215,7 +215,17 @@ def _build_companies(faction, fc, code, func, entries, bn_id, cfg) -> list[Unit]
         for i in range(n_co):
             co_no += 1
             co_id = f"UNIT-{fc}-{code}-CO{co_no}"
-            out.append(Unit(co_id, f"{cfg.faction_name[faction]} {func}중대 {co_no}",
+            # 지명별로 갈린 중대는 번호만으로는 어느 중대가 어디인지 안
+            # 보인다("적군 전차중대 1"). name(=object-label)에 분할 근거인
+            # 지명을 넣는다. unit_id·marking은 하류가 쓰므로 그대로 둔다.
+            if key:
+                place = key[4:] if key.startswith("LOC_") else key
+                label = f"{cfg.faction_name[faction]} {func}중대({place})"
+                if n_co > 1:
+                    label += f" {i + 1}"
+            else:
+                label = f"{cfg.faction_name[faction]} {func}중대 {co_no}"
+            out.append(Unit(co_id, label,
                             f"{fc}{code}CO{co_no}", ECHELON_CO, faction, bn_id))
             for j, members in enumerate(chunks[i * per:(i + 1) * per], 1):
                 out.append(Unit(
