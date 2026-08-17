@@ -28,6 +28,7 @@ python scripts/01_harvest_layout.py     # golden 통제점 → 지명 좌표
 python scripts/02_parse_events.py       # 원문 → 이벤트    (+G1 +G0)
 python scripts/03_build_timetable.py    # 이벤트 → 타임테이블 (+G2)
 python scripts/04_compile_scnx.py       # 스펙 → PLN → .scnx (+G0 +G3)
+python scripts/07_derive_relations.py   # 이벤트+편제 → 파생 관계 (R1~R12)
 ```
 
 각 단계가 찍는 줄에서 **`차단 N건`의 N이 0**이어야 다음이 의미가 있다.
@@ -109,6 +110,8 @@ python scripts/06_evaluate_dataset.py      # 후처리 산출물 평가 (E1·E2�
 | `config/entity_class_map.csv` | 02 → 03 → 04 |
 | `config/task_catalog.csv` | 04 |
 | `config/dis_catalog.csv` | 04 |
+| `config/orbat.json` | **04 → 07** |
+| `config/location_codes.csv` | **04 → 05** |
 
 `config/battlefield_layout.json`은 **생성물이다. 손으로 고치지 말 것** — 01이
 덮어쓰고, 어긋나면 테스트가 잡는다.
