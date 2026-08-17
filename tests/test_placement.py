@@ -249,12 +249,18 @@ def test_suppressive_fire_aims_where_the_target_is_when_fired(built):
 def test_blocks_follow_the_given_unit_function():
     """블록 키가 편제 소대면, 같은 타입이라도 다른 소대는 다른 블록이다.
 
-    지명은 placement_rules.csv에 없는 것을 쓴다 — 격자(기본 대형)로 떨어지게
-    하기 위해서다. 선형(방어선)처럼 정면에 여유가 넉넉하면 블록 사이 간격이
-    블록 내부 이격거리와 같아져(둘 다 같은 타입그룹 spacing) 40개를 한
-    블록으로 두든 둘로 가르든 좌표가 우연히 같아진다 — 그러면 이 테스트가
-    아무것도 못 잡는다. 격자는 열 수가 개수의 제곱근에 매이므로 20+20 분할이
-    40 하나와 다른 모양을 낸다.
+    지명은 브리프 원안(`LOC_남측제1방어선`)이 아니라 `LOC_적북측집결지`를
+    쓴다. 선형(방어선) 대형은 정면(600m)이 넉넉해서, 40개가 전부 같은
+    타입그룹이면 블록 사이 간격이 블록 내부 이격거리와 정확히 같아진다 —
+    40개를 한 블록으로 두든 20+20 두 블록으로 가르든 좌표가 우연히 같아져
+    이 테스트가 아무것도 못 잡는다(실측: `LOC_남측제1방어선`에서 40개 중
+    좌표가 달라지는 객체 0개). 이건 결함이 아니라 이 대형 계산의 사실이다.
+
+    `LOC_적북측집결지`는 격자(GRID) 대형이라 열 수가 개수의 제곱근에
+    매인다 — 40개 한 블록(≈7×6)과 20+20 두 블록(≈5×4씩)이 다른 모양을
+    내 좌표가 갈린다(실측: 40개 전부 달라짐). 이 지명은 실제 시나리오에서
+    가장 많은 객체(130여 개)가 몰리는 곳이라, 편제별 블록 분리가 실제로
+    의미를 갖는 자리이기도 하다.
     """
     from pathlib import Path
 
@@ -263,7 +269,7 @@ def test_blocks_follow_the_given_unit_function():
     rules = PlacementRules.load(
         Path(__file__).resolve().parents[1] / "config" / "placement_rules.csv")
     items = [_Item(f"FR-INF-{i:03d}", "보병 - 소총(M4 계열)", "BLUE",
-                   "LOC_배치테스트용미등록지명") for i in range(1, 41)]
+                   "LOC_적북측집결지") for i in range(1, 41)]
     one = plan_offsets(items, rules, 163.36, unit_of_object=lambda o: "PL1")
     two = plan_offsets(
         items, rules, 163.36,
