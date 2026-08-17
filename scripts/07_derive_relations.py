@@ -93,6 +93,25 @@ def main() -> int:
     lines += [f"- `{k}`: {v:,}" for k, v in kinds.most_common()]
     lines += ["", "## 레이어별", ""]
     lines += [f"- `{k}`: {v:,}" for k, v in Counter(r[1] for r in rows).most_common()]
+
+    # rule_id × predicate 분해. 술어별 집계만 보면 같은 사건이 두 규칙에서
+    # 두 번 세어지는 것(R4의 firesUpon 21건과 R12가 소대 주어로 다시 쓴
+    # 같은 21건)이 숨는다 — 42로만 보이면 사격 사건이 42건인 것처럼
+    # 읽힌다(F5). rule_id별 내역을 나란히 두어 어느 건이 어느 규칙에서
+    # 왔는지, 같은 사건이 다른 주어로 재기술됐을 뿐인지 보이게 한다.
+    rule_predicate = Counter((r[0], r[2]) for r in rows)
+    lines += ["", "## rule_id × 술어", ""]
+    lines += ["| rule_id | 술어 | 건수 |", "| --- | --- | --- |"]
+
+    def _rule_sort_key(rule_id: str):
+        digits = "".join(c for c in rule_id if c.isdigit())
+        return (int(digits) if digits else 0, rule_id)
+
+    for (rid, pred), n in sorted(rule_predicate.items(),
+                                  key=lambda kv: (_rule_sort_key(kv[0][0]),
+                                                  kv[0][1])):
+        lines.append(f"| `{rid}` | `{pred}` | {n:,} |")
+
     if unmatched:
         lines += ["", "## 미매칭 (앞 50건)", ""]
         lines += [f"- {n}: {u}" for n, u in unmatched[:50]]
