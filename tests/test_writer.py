@@ -6,6 +6,7 @@ import pytest
 
 from vtmak.gates import blocking
 from vtmak.geometry import BattlefieldLayout
+from vtmak.orbat import OrbatConfig, build_orbat
 from vtmak.paths import SCENARIO
 from vtmak.parser import PatternMap, parse_scenario
 from vtmak.ranges import WeaponRanges
@@ -13,7 +14,7 @@ from vtmak.registry import UNCLASSIFIED, ClassMap, build_registry
 from vtmak.roster import RosterPlan, filter_events, select_roster
 from vtmak.scnx.catalog import DisCatalog, TaskCatalog, TaskKinds
 from vtmak.scnx.gates import check_g3, weapons_in
-from vtmak.scnx.golden import Golden
+from vtmak.scnx.golden import Golden, _balanced_records
 from vtmak.scnx.plan import SKIP_UNSUPPORTED, PlanStep
 from vtmak.scnx.pack import ensure_golden
 from vtmak.scnx.spec import build_spec
@@ -23,8 +24,9 @@ ROOT = Path(__file__).resolve().parents[1]
 GOLDEN = ensure_golden(ROOT / "yewon_test")
 
 
-@pytest.fixture(scope="module")
-def built():
+def _build_spec(orbat=None):
+    """test_spec._build과 같은 구성. 명부를 감축한 뒤에야 편제를 지어야
+    unit_of_entity가 저작 대상 328객체와 어긋나지 않는다."""
     cfg = ROOT / "config"
     pm = PatternMap.load(cfg / "pattern_map.csv")
     res = parse_scenario(
@@ -39,12 +41,30 @@ def built():
                          task_ids)
     events = filter_events(res.events, keep)
     reg = {o: d for o, d in reg.items() if o in keep}
+    ob = build_orbat(reg, OrbatConfig.load(cfg / "orbat.json")) if orbat else None
     dis = DisCatalog.load(cfg / "dis_catalog.csv")
     spec = build_spec(events, reg, lay, pm,
                       TaskCatalog.load(cfg / "task_catalog.csv"),
                       TaskKinds.load(cfg / "task_kinds.csv"), dis,
-                      WeaponRanges.load(cfg / "weapon_ranges.csv"), "battle")
+                      WeaponRanges.load(cfg / "weapon_ranges.csv"), "battle",
+                      orbat=ob)
     return spec, dis
+
+
+@pytest.fixture(scope="module")
+def built():
+    return _build_spec()
+
+
+@pytest.fixture(scope="module")
+def spec_with_orbat():
+    spec, _ = _build_spec(orbat=True)
+    return spec
+
+
+@pytest.fixture(scope="module")
+def writer():
+    return get_writer("template", str(GOLDEN))
 
 
 @pytest.fixture(scope="module")
@@ -52,6 +72,16 @@ def written(built, tmp_path_factory):
     spec, _ = built
     out_dir = tmp_path_factory.mktemp("scnx")
     return get_writer("template", str(GOLDEN)).write(spec, out_dir)
+
+
+@pytest.fixture(scope="module")
+def scnx_with_units(spec_with_orbat, writer):
+    return writer._oob(spec_with_orbat)
+
+
+@pytest.fixture(scope="module")
+def omp_with_units(spec_with_orbat, writer):
+    return writer._omp(spec_with_orbat)
 
 
 def test_g3_has_no_blocking_violations(built):
@@ -259,3 +289,45 @@ def test_mapping_tables_stay_out_of_the_code():
     src = (ROOT / "vtmak" / "scnx" / "plan.py").read_text(encoding="utf-8")
     for name in ("LABEL_CANDIDATES", "REF_FIELD", "FIRE_KIND"):
         assert f"{name}:" not in src and f"{name} =" not in src, name
+
+
+def test_org_tree_closes_with_units(scnx_with_units):
+    """parent-name이 전부 이 .oob 안에서 해석된다. 안 그러면 무한 로딩이다."""
+    oob = scnx_with_units
+    declared = set(re.findall(r'\(uuid\s+"VRF_UUID:([^"]*)"', oob)) | {
+        "1 Force", "2 Force", "3 Force"}
+    refs = re.findall(r'\(parent-name\s+(?:"VRF_UUID:([^"]*)"|(\S+?))\s*\)', oob)
+    dangling = sorted({a for a, b in refs if a and a not in declared} |
+                      {b for a, b in refs if b and b != "USE-DEFAULT"})
+    assert dangling == []
+
+
+def test_every_entity_hangs_under_a_platoon(scnx_with_units, spec_with_orbat):
+    """고아 엔티티가 있으면 편제가 반쪽이다.
+
+    브리프 원안의 정규식(`\\(local-vrf-object.*?\\n   \\)`)은 writer가 정확히
+    3칸 들여쓰기로 레코드를 닫는다는 가정에 기대 취약하다. 대신 golden.py가
+    aggregate 파싱에 쓰는 것과 같은 괄호 균형 파싱(`_balanced_records`)으로
+    레코드를 잘라 들여쓰기와 무관하게 만든다. 단언 내용(엔티티 328 전원이
+    소대 uuid 밑에 걸린다)은 원안 그대로 유지한다.
+    """
+    oob = scnx_with_units
+    pl_uuids = {u.uuid for u in spec_with_orbat.units if u.echelon == "소대"}
+    recs = _balanced_records(oob, "(local-vrf-object")
+    hung = 0
+    for r in recs:
+        m = re.search(r'\(parent-name\s+"VRF_UUID:([^"]*)"', r)
+        if m and m.group(1) in pl_uuids:
+            hung += 1
+    assert hung == len(spec_with_orbat.entities)
+
+
+def test_omp_lists_every_object_with_units(scnx_with_units, omp_with_units,
+                                           spec_with_orbat):
+    oob_uuids = set(re.findall(r'\(uuid\s+"VRF_UUID:([^"]*)"', scnx_with_units))
+    omp_uuids = set(re.findall(r'\(uuid\s+"VRF_UUID:([^"]*)"', omp_with_units))
+    assert oob_uuids == omp_uuids
+    assert len(omp_uuids) == (len(spec_with_orbat.entities)
+                              + len(spec_with_orbat.units)
+                              + len(spec_with_orbat.control_objects)
+                              + len(spec_with_orbat.fixed_objects))

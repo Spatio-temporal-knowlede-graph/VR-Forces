@@ -18,6 +18,7 @@ for _s in (sys.stdout, sys.stderr):
 
 from vtmak.gates import blocking, check_g0                        # noqa: E402
 from vtmak.geometry import BattlefieldLayout                      # noqa: E402
+from vtmak.orbat import OrbatConfig, build_orbat                  # noqa: E402
 from vtmak.parser import Event, PatternMap                        # noqa: E402
 from vtmak.ranges import WeaponRanges                             # noqa: E402
 from vtmak.registry import ClassMap, build_registry               # noqa: E402
@@ -66,11 +67,13 @@ def main() -> int:
         return 1
 
     fixed = load_fixed(CFG / "fixed_objects.json", ROOT, layout)
+    orbat = build_orbat(registry, OrbatConfig.load(CFG / "orbat.json"))
     spec = build_spec(events, registry, layout, pmap,
                       TaskCatalog.load(CFG / "task_catalog.csv"),
                       TaskKinds.load(CFG / "task_kinds.csv"),
                       dis, ranges,
-                      scenario_id="battle", fixed=fixed)
+                      scenario_id="battle", fixed=fixed, orbat=orbat)
+    print(f"부대 {len(spec.units)} (대대·중대·소대)")
 
     golden_path = ensure_golden(args.golden)
     if _report(check_g3(spec, Golden.load(golden_path), dis)):
