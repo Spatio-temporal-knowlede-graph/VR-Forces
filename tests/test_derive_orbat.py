@@ -9,7 +9,11 @@ from pathlib import Path
 
 import pytest
 
-from vtmak.derive.orbat_relations import r8_part_of, r9_task_organization
+from vtmak.derive.config import DeriveRules
+from vtmak.derive.events import EventIndex
+from vtmak.derive.orbat_relations import (r8_part_of, r9_task_organization,
+                                          r10_unit_moves, r11_unit_occupies,
+                                          r12_unit_fires)
 from vtmak.geometry import BattlefieldLayout
 from vtmak.orbat import OrbatConfig, build_orbat
 from vtmak.parser import Event
@@ -78,3 +82,96 @@ def test_r9_uses_only_declared_pairs(orbat):
           for p in ("supports", "reinforces")}
     assert got["supports"] == set(orbat.supports())
     assert got["reinforces"] == set(orbat.reinforces())
+
+
+# ── R10~R12 관측에서 나오는 부대 사실 ────────────────────────────────────
+@pytest.fixture(scope="module")
+def idx():
+    return EventIndex.load(EVENTS)
+
+
+@pytest.fixture(scope="module")
+def rules():
+    return DeriveRules.load(CFG / "derive_rules.csv")
+
+
+def _unit_subject(rels, orbat):
+    ids = {u.unit_id for u in orbat.units()}
+    return all(r.subject in ids for r in rels)
+
+
+def test_r10_subject_is_a_unit(idx, orbat, rules):
+    """부대가 주어인 fact를 만든다 — 백마고지에는 0건이었다."""
+    rels = r10_unit_moves(idx, orbat, rules).relations
+    assert rels, "0건이면 unit_move_ratio나 moveTo 이벤트를 본다"
+    assert {r.predicate for r in rels} == {"movesToward"}
+    assert _unit_subject(rels, orbat)
+
+
+def test_r10_keys_on_time_not_just_unit_and_destination(idx, orbat, rules):
+    """시각을 접기 키에서 빼면 같은 (소대, 목적지)가 여러 시각에 걸쳐도
+    한 건으로 합쳐진다 — 백마고지가 걸린 바로 그 함정이다. 실측값(65건,
+    고유 (소대,목적지) 쌍 63개)은 그 둘이 다르다는 것 자체가 시각이 키에
+    실제로 들어가 있다는 증거다. 시각을 빼면 106건으로 바뀐다(직접 확인함).
+    """
+    rels = r10_unit_moves(idx, orbat, rules).relations
+    pairs = {(r.subject, r.object) for r in rels}
+    assert len(rels) == 65
+    assert len(pairs) == 63
+    assert len(rels) > len(pairs)
+
+
+def test_r11_occupies_a_place(idx, orbat, rules):
+    rels = r11_unit_occupies(idx, orbat, rules).relations
+    assert rels, "0건이면 unit_occupy_ratio나 stopAt/stayAt 이벤트를 본다"
+    assert {r.predicate for r in rels} == {"occupies"}
+    assert _unit_subject(rels, orbat)
+    assert all(r.object.startswith("LOC_") for r in rels)
+    #  2026-08-18 실측: EN 기갑 1중대 1소대가 중앙킬존을 점령한다.
+    pairs = {(r.subject, r.object) for r in rels}
+    assert ("UNIT-EN-ARM-CO1-PL1", "LOC_중앙킬존") in pairs
+
+
+def test_r12_fires_upon_something(idx, orbat, rules):
+    rels = r12_unit_fires(idx, orbat, rules).relations
+    assert rels, "0건이면 unit_fire_ratio를 본다(사격은 소수가 한다)"
+    assert {r.predicate for r in rels} == {"firesUpon"}
+    assert _unit_subject(rels, orbat)
+    #  2026-08-18 실측: EN 화기 1중대 1소대가 FR-LN-001(방어선)에 사격한다.
+    pairs = {(r.subject, r.object) for r in rels}
+    assert ("UNIT-EN-FIRE-CO1-PL1", "FR-LN-001") in pairs
+
+
+def test_observed_unit_facts_are_not_layered_as_orbat(idx, orbat, rules):
+    """관측에서 나온 값은 편제표 선언과 다른 레이어여야 한다."""
+    from vtmak.derive.orbat_relations import LAYER_ORBAT
+    for res in (r10_unit_moves(idx, orbat, rules),
+                r11_unit_occupies(idx, orbat, rules),
+                r12_unit_fires(idx, orbat, rules)):
+        assert LAYER_ORBAT not in {r.layer for r in res.relations}
+
+
+def test_r6_counts_by_platoon_when_orbat_is_given(idx, orbat, rules):
+    """편제를 주면 R6의 분모가 타입 접두사가 아니라 소대가 된다."""
+    from vtmak.derive.relations import r6_unit_suppressed
+    ids = {u.unit_id for u in orbat.units()}
+    res = r6_unit_suppressed(idx, rules, orbat=orbat).relations
+    assert res, "0건이면 orbat 경로의 unit_members가 조용히 비었다는 뜻이다"
+    for r in res:
+        assert r.subject in ids
+    #  2026-08-18 실측: 타입 접두사(EN-INF·FR-INF) 대신 소대 단위로 갈린다.
+    assert {r.subject for r in res} == {
+        "UNIT-EN-INF-CO1-PL1", "UNIT-EN-INF-CO1-PL2", "UNIT-FR-INF-CO1-PL1"}
+
+
+def test_r10_produces_a_known_platoon_time_destination_triple(idx, orbat, rules):
+    """구체값 단언 — 술어·부대 소속만 맞고 내용이 틀려도 위 구조적 단언들은
+    통과한다. 여기서는 실측으로 확인한 (소대, 목적지) 조합 하나가 실제로
+    나오는지 고정한다. 값이 바뀌면 _fold의 접기 로직이나 임계값이 바뀐
+    것이다.
+    """
+    rels = r10_unit_moves(idx, orbat, rules).relations
+    pairs = {(r.subject, r.object) for r in rels}
+    #  2026-08-18 실측: 대공소대(UNIT-EN-AD-PL1)가 적북측접근로로 이동한다.
+    #  이 조합이 없어지면 _fold의 접기 로직이나 unit_move_ratio가 바뀐 것이다.
+    assert ("UNIT-EN-AD-PL1", "LOC_적북측접근로") in pairs

@@ -11,6 +11,8 @@
 """
 from __future__ import annotations
 
+from collections import defaultdict
+
 from .relations import Relation, RuleResult
 
 # 편제표가 선언한 값. 관측에서 파생한 relations.LAYER("derived")와 섞이면
@@ -52,3 +54,72 @@ def r9_task_organization(orbat) -> RuleResult:
         rels.append(Relation("R9", "reinforces", a, b, (ORBAT_CONFIG_PATH,),
                              LAYER_ORBAT))
     return RuleResult(tuple(rels))
+
+
+# ── R10~R12 관측에서 부대가 주어인 fact ───────────────────────────────────
+# R8·R9와 달리 layer를 안 넘긴다 — 기본값 "derived"(relations.LAYER)를 쓴다.
+# 이 셋은 편제표 선언이 아니라 이벤트를 접어 만든 값이라, LAYER_ORBAT를
+# 쓰면 "편제표가 이렇게 말했다"는 거짓 근거가 붙는다.
+
+
+def _by_platoon(index, orbat):
+    """소대 → 이벤트에 등장한 구성원. 분모는 정원이 아니라 이 수다.
+
+    정원으로 나누면 명부 감축이 비율을 바꾼다(R6가 같은 이유로 그렇게 한다).
+    """
+    seen: dict[str, set] = defaultdict(set)
+    for e in index.events:
+        pl = orbat.platoon_of(e.actor) if e.actor else None
+        if pl:
+            seen[pl].add(e.actor)
+    return seen
+
+
+def _fold(index, orbat, ratio, templates, target_of, rule_id, predicate):
+    """구성원 과반이 같은 시각·같은 대상에 대해 같은 일을 하면 부대 사실이다.
+
+    시각을 키에 넣는다. 넣지 않으면 전 구간의 행동이 한 건으로 접혀 시간축이
+    사라지고, 그 순간 백마고지처럼 '안 변하는 관계'가 된다.
+    """
+    seen = _by_platoon(index, orbat)
+    groups: dict[tuple[str, int, str], set] = defaultdict(set)
+    for e in index.events:
+        if e.template not in templates:
+            continue
+        pl = orbat.platoon_of(e.actor) if e.actor else None
+        target = target_of(e)
+        if not pl or not target:
+            continue
+        groups[(pl, e.time_s, target)].add(e.actor)
+
+    rels = []
+    for (pl, _t, target), actors in sorted(groups.items()):
+        roster = seen.get(pl) or set()
+        if not roster or len(actors) / len(roster) < ratio:
+            continue
+        rels.append(Relation(rule_id, predicate, pl, target,
+                             tuple(sorted(actors))))
+    return RuleResult(tuple(rels))
+
+
+def r10_unit_moves(index, orbat, rules) -> RuleResult:
+    """movesToward(부대, 지명) — 구성원 과반이 같은 곳으로 갈 때."""
+    return _fold(index, orbat, rules.threshold("unit_move_ratio"),
+                 {"moveTo"}, lambda e: e.dst, "R10", "movesToward")
+
+
+def r11_unit_occupies(index, orbat, rules) -> RuleResult:
+    """occupies(부대, 지명) — 구성원 과반이 그 자리에 멈춰 있을 때."""
+    return _fold(index, orbat, rules.threshold("unit_occupy_ratio"),
+                 {"stopAt", "stayAt"}, lambda e: e.location, "R11", "occupies")
+
+
+def r12_unit_fires(index, orbat, rules) -> RuleResult:
+    """firesUpon(부대, 대상) — 구성원 다수가 같은 대상을 쏠 때.
+
+    대상은 엔티티일 수도 지역 표기 객체일 수도 있다. 가리지 않는다 — 무엇을
+    쐈는지는 대상 id가 말한다.
+    """
+    return _fold(index, orbat, rules.threshold("unit_fire_ratio"),
+                 {"directFireAt", "indirectFireAt"}, lambda e: e.target,
+                 "R12", "firesUpon")
