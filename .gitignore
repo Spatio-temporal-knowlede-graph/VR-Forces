@@ -3,6 +3,8 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+# 서브에이전트 실행 원장·브리프. 기록은 git 히스토리가 갖는다.
+.superpowers/
 # ensure_golden이 디렉터리를 묶어 만드는 산출물. 원본은 디렉터리 쪽이다.
 yewon_test/*.scnx
 campaign/*.scnx
