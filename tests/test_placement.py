@@ -242,3 +242,32 @@ def test_suppressive_fire_aims_where_the_target_is_when_fired(built):
                     (s.event_id, start, now)
     assert checked, "제압사격이 하나도 없다"
     assert moved, "표적이 이동한 뒤의 사격이 없어 이 테스트가 아무것도 못 잡는다"
+
+
+# ---------- 부대 기준 주입 ----------------------------------------------------
+
+def test_blocks_follow_the_given_unit_function():
+    """블록 키가 편제 소대면, 같은 타입이라도 다른 소대는 다른 블록이다.
+
+    지명은 placement_rules.csv에 없는 것을 쓴다 — 격자(기본 대형)로 떨어지게
+    하기 위해서다. 선형(방어선)처럼 정면에 여유가 넉넉하면 블록 사이 간격이
+    블록 내부 이격거리와 같아져(둘 다 같은 타입그룹 spacing) 40개를 한
+    블록으로 두든 둘로 가르든 좌표가 우연히 같아진다 — 그러면 이 테스트가
+    아무것도 못 잡는다. 격자는 열 수가 개수의 제곱근에 매이므로 20+20 분할이
+    40 하나와 다른 모양을 낸다.
+    """
+    from pathlib import Path
+
+    from vtmak.scnx.placement import PlacementRules, _Item, plan_offsets
+
+    rules = PlacementRules.load(
+        Path(__file__).resolve().parents[1] / "config" / "placement_rules.csv")
+    items = [_Item(f"FR-INF-{i:03d}", "보병 - 소총(M4 계열)", "BLUE",
+                   "LOC_배치테스트용미등록지명") for i in range(1, 41)]
+    one = plan_offsets(items, rules, 163.36, unit_of_object=lambda o: "PL1")
+    two = plan_offsets(
+        items, rules, 163.36,
+        unit_of_object=lambda o: "PL1" if o < "FR-INF-021" else "PL2")
+    # 소대를 둘로 가르면 블록이 갈려 배치가 달라진다.
+    assert {k: (v.east_m, v.north_m) for k, v in one.items()} != \
+           {k: (v.east_m, v.north_m) for k, v in two.items()}

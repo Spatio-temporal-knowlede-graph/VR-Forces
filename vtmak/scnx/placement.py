@@ -170,7 +170,8 @@ class _Item:
 
 def plan_offsets(items: list[_Item], rules: PlacementRules,
                  axis_bearing_deg: float,
-                 headings: dict[str, float] | None = None) -> dict[str, Placed]:
+                 headings: dict[str, float] | None = None,
+                 unit_of_object=None) -> dict[str, Placed]:
     """객체 → 지명 기준 로컬 오프셋.
 
     같은 지명의 객체를 (부대, 타입그룹)별 블록으로 묶고, 블록을 정면 축을 따라
@@ -178,9 +179,13 @@ def plan_offsets(items: list[_Item], rules: PlacementRules,
     블록 사이·선반 사이 간격은 양쪽 이격거리 중 큰 값이라, 서로 다른 타입이
     붙어도 큰 쪽 규칙을 지킨다.
 
+    `unit_of_object`가 부대를 정한다. 안 주면 roster.unit_of(타입 접두사)로
+    폴백한다 — 편제표 없이도 배치는 돌아야 한다.
+
     대형이 눕는 방향은 그 지명에 있는 객체들의 **평균 방위**(= 적을 보는 쪽)에
     수직이다. `headings`를 안 주면 전장 축으로 폴백한다.
     """
+    unit = unit_of_object or unit_of
     by_loc: dict[str, list[_Item]] = {}
     for it in items:
         if it.location:
@@ -192,7 +197,7 @@ def plan_offsets(items: list[_Item], rules: PlacementRules,
         # 블록 순서: 타입그룹 → 부대 → id. 같은 부대가 흩어지지 않는다.
         blocks: dict[tuple[str, str], list[_Item]] = {}
         for it in group:
-            blocks.setdefault((it.type_group, unit_of(it.object_id)),
+            blocks.setdefault((it.type_group, unit(it.object_id)),
                               []).append(it)
 
         # 선반 배치. u는 왼쪽부터 쌓고 마지막에 전체를 가운데로 옮긴다.
@@ -251,12 +256,13 @@ def _location_facing(group: list[_Item], headings: dict[str, float],
 
 
 def build_positions(defs, layout: BattlefieldLayout, rules: PlacementRules,
-                    headings: dict[str, float] | None = None
-                    ) -> dict[str, Coord]:
+                    headings: dict[str, float] | None = None,
+                    unit_of_object=None) -> dict[str, Coord]:
     """{object_id: EntityDef} → {object_id: 배치 좌표}."""
     items = [_Item(oid, d.type_group, d.faction, d.initial_location)
              for oid, d in sorted(defs.items())]
-    offsets = plan_offsets(items, rules, layout.axis_bearing_deg, headings)
+    offsets = plan_offsets(items, rules, layout.axis_bearing_deg, headings,
+                           unit_of_object)
     out: dict[str, Coord] = {}
     for oid, d in sorted(defs.items()):
         p = offsets.get(oid)

@@ -156,7 +156,8 @@ class _Ctx:
                  registry: dict[str, EntityDef],
                  entity_uuids: dict[str, str],
                  events: list[Event],
-                 coords: dict[str, Coord] | None = None) -> None:
+                 coords: dict[str, Coord] | None = None,
+                 orbat=None) -> None:
         self._layout = layout
         self._ids = ids
         self._reg = registry
@@ -165,13 +166,22 @@ class _Ctx:
         self._tracker = PositionTracker(events, registry)
         self._hit_at = engagement_locations(events)
         self.referenced_locs: set[str] = set()
-        # 부대 선두 — 대형 추종 이동(follow-entity)의 추종 대상.
+        # 부대 선두 — 대형 추종 이동(follow-entity)의 추종 대상. 편제가 있으면
+        # 소대 선두를, 없으면 타입 접두사 선두를 쓴다.
+        self._orbat = orbat
         self._leader: dict[str, str] = {}
         for oid in sorted(entity_uuids):
-            self._leader.setdefault(unit_of(oid), oid)
+            self._leader.setdefault(self._unit(oid), oid)
+
+    def _unit(self, object_id: str) -> str:
+        if self._orbat is not None:
+            pl = self._orbat.platoon_of(object_id)
+            if pl:
+                return pl
+        return unit_of(object_id)
 
     def unit_leader(self, object_id: str) -> str | None:
-        lead = self._leader.get(unit_of(object_id))
+        lead = self._leader.get(self._unit(object_id))
         return None if lead == object_id else lead
 
     def entity_uuid(self, object_id: str) -> str | None:
@@ -238,7 +248,8 @@ def build_spec(events: list[Event], registry: dict[str, EntityDef],
                dis: DisCatalog, ranges: WeaponRanges,
                scenario_id: str, seed: str = "",
                fixed: list[FixedObject] | None = None,
-               placement: PlacementRules | None = None) -> ScnxSpec:
+               placement: PlacementRules | None = None,
+               orbat=None) -> ScnxSpec:
     ids = IdAllocator(seed or scenario_id)
     taskable = {oid: d for oid, d in sorted(registry.items()) if d.taskable}
     entity_uuids = {oid: ids.alloc("entity", oid) for oid in taskable}
@@ -248,8 +259,9 @@ def build_spec(events: list[Event], registry: dict[str, EntityDef],
     # 방위가 먼저다 — 대형은 그 방위에 수직으로 눕는다(방어선이 적을 가로막게).
     rules = placement or PlacementRules.load(CONFIG / "placement_rules.csv")
     headings = build_headings(taskable, events, layout)
-    coords = build_positions(taskable, layout, rules, headings)
-    ctx = _Ctx(layout, ids, registry, entity_uuids, events, coords)
+    coords = build_positions(taskable, layout, rules, headings,
+                             unit_of_object=(orbat.platoon_of if orbat else None))
+    ctx = _Ctx(layout, ids, registry, entity_uuids, events, coords, orbat)
 
     spec = ScnxSpec(scenario_id=scenario_id, terrain=layout.terrain,
                     fixed_objects=list(fixed or []))
