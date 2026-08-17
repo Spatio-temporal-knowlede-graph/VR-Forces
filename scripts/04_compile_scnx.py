@@ -25,6 +25,7 @@ from vtmak.scnx.fixed import load_fixed            # noqa: E402
 from vtmak.scnx.gates import check_g3                             # noqa: E402
 from vtmak.scnx.golden import Golden                              # noqa: E402
 from vtmak.scnx.pack import ensure_golden                         # noqa: E402
+from vtmak.scnx.places import PlaceCodes                          # noqa: E402
 from vtmak.scnx.spec import build_spec                            # noqa: E402
 from vtmak.scnx.writer import get_writer                          # noqa: E402
 
@@ -76,7 +77,11 @@ def main() -> int:
         return 1
 
     OUT.mkdir(parents=True, exist_ok=True)
-    out = get_writer(args.writer, str(golden_path)).write(spec, OUT)
+    # 통제점 marking을 지명 코드로 낸다 — 순번(P{k})이면 CSV로 그대로 새어
+    # 나가 지명이 사라진다.
+    place_codes = PlaceCodes.load(CFG / "location_codes.csv")
+    out = get_writer(args.writer, str(golden_path),
+                      place_codes=place_codes).write(spec, OUT)
     planned = sum(1 for v in spec.entity_plans.values()
                   if any(s.pln for s in v))
     tasks = sum(1 for v in spec.entity_plans.values() for s in v if s.pln)

@@ -1,0 +1,30 @@
+loc_id,code,note
+LOC_남측고지관측소,S_OP,아군 관측소
+LOC_남측제1방어선,S_DEF1,
+LOC_남측제1방어선전방,S_DEF1_FWD,
+LOC_남측제2방어선,S_DEF2,
+LOC_동측능선,E_RIDGE,
+LOC_동측측방접근로,E_AVE,
+LOC_목표A,OBJ_A,
+LOC_목표A남측,OBJ_A_S,
+LOC_목표B,OBJ_B,
+LOC_북측관측소,N_OP,적 관측소
+LOC_북측예비방어선,N_DEF_RES,
+LOC_북측전방방어선,N_DEF_FWD,
+LOC_서측능선,W_RIDGE,
+LOC_아군박격포진지,S_MORT,
+LOC_아군포병진지,S_ARTY,relocate 규칙으로 옮긴 점
+LOC_아군후방보급집결지,S_SUPPLY,
+LOC_아군후방지휘소,S_CP,
+LOC_적박격포진지,N_MORT,
+LOC_적북측접근로,N_AVE,
+LOC_적북측지휘소,N_CP,
+LOC_적북측집결지,N_ASSY,
+LOC_적전방방어선후방,N_DEF_RR,
+LOC_적포병진지,N_ARTY,relocate 규칙으로 옮긴 점
+LOC_적후방보급집결지,N_SUPPLY,
+LOC_중앙계곡,C_VALLEY,
+LOC_중앙계곡북측,C_VALLEY_N,
+LOC_중앙킬존,C_KILLZONE,
+LOC_중앙킬존남측,C_KZ_S,
+LOC_포병진지또는방어선후방,RR_AREA,

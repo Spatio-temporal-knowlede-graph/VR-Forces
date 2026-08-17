@@ -191,7 +191,8 @@ def _check_org_tree(oob: str) -> None:
 class TemplateScnxWriter:
     def __init__(self, golden_path: str = "yewon_test.scnx",
                  emit_plans: bool = True,
-                 ai_enabled: bool = AI_ENABLED_DEFAULT) -> None:
+                 ai_enabled: bool = AI_ENABLED_DEFAULT,
+                 place_codes=None) -> None:
         self.golden = Golden.load(golden_path)
         self.emit_plans = emit_plans
         self.ai_enabled = ai_enabled
@@ -199,6 +200,9 @@ class TemplateScnxWriter:
         self._life = self.golden.template_for("3")   # 보병
         self._point = self.golden.template_for("16")  # 점
         self._route = self.golden.template_for("17")  # 라우트
+        # 통제점 marking. 없으면 옛 순번(P{k})으로 폴백한다 — 코드표 없이
+        # 만든 .scnx도 로드는 되어야 한다.
+        self.place_codes = place_codes
 
     # --- 레코드 치환 ---------------------------------------------------------
     def _entity_record(self, e: EntitySpec, oid: str, mark: str) -> str:
@@ -264,7 +268,10 @@ class TemplateScnxWriter:
                 e, f"1:3001:{n}", e.object_id.replace("-", "")[:11]))
             n += 1
         for k, c in enumerate(spec.control_objects, 1):
-            parts.append("  " + self._control_record(c, f"1:3001:{n}", f"P{k}"))
+            # marking이 CSV로 그대로 나간다. 순번(P{k})을 쓰면 지명이 사라진다.
+            mark = (self.place_codes.code(c.ref_id) if self.place_codes
+                    else f"P{k}")
+            parts.append("  " + self._control_record(c, f"1:3001:{n}", mark))
             n += 1
         for f in spec.fixed_objects:
             # 원본 시나리오의 레코드를 쓴다. object-identifier만 이 .oob 안에서
@@ -376,9 +383,10 @@ def _gstem(g: Golden) -> str:
     return Path(_gname(g, ".scn")).stem
 
 
-def get_writer(name: str, golden: str = "yewon_test.scnx") -> IScnxWriter:
+def get_writer(name: str, golden: str = "yewon_test.scnx",
+                place_codes=None) -> IScnxWriter:
     if name == "dir":
         return DirWriter()
     if name == "template":
-        return TemplateScnxWriter(golden)
+        return TemplateScnxWriter(golden, place_codes=place_codes)
     raise ValueError(f"알 수 없는 writer: {name} (dir|template)")
