@@ -22,11 +22,19 @@
       )
       (map-entry 
          (address  1 3001)
+         (uuid  "VRF_UUID:1031fb44-d662-2649-b7cc-2d5f93d9f510")
+      )
+      (map-entry 
+         (address  1 3001)
          (uuid  "VRF_UUID:10d8aa48-a4f2-9744-ac86-8ab68e73ff4c")
       )
       (map-entry 
          (address  1 3001)
          (uuid  "VRF_UUID:12d63cce-1ce8-e14c-ad83-37f01d0e04cd")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:2177f0b5-ef54-ad45-9c01-ccef6ead6d3f")
       )
       (map-entry 
          (address  1 3001)
@@ -47,6 +55,10 @@
       (map-entry 
          (address  1 3001)
          (uuid  "VRF_UUID:3ef9a244-4bfd-6848-90be-7ca98377b27c")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:443ec843-8100-4147-b200-e3674f26fc00")
       )
       (map-entry 
          (address  1 3001)
@@ -95,6 +107,10 @@
       (map-entry 
          (address  1 3001)
          (uuid  "VRF_UUID:91ee2fb1-68a4-f649-93de-4d42540cd512")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:958011c2-1f90-0c4c-a1f7-38f081829c3e")
       )
       (map-entry 
          (address  1 3001)
@@ -158,6 +174,10 @@
       )
       (map-entry 
          (address  1 3001)
+         (uuid  "VRF_UUID:d6aa1592-3975-6840-bdb0-76028e389ae9")
+      )
+      (map-entry 
+         (address  1 3001)
          (uuid  "VRF_UUID:de9975d6-fdbb-df4c-bbde-6745a74de71e")
       )
       (map-entry 
@@ -191,6 +211,10 @@
       (map-entry 
          (address  1 3001)
          (uuid  "VRF_UUID:f42b657c-1d9f-724b-bdfb-55269ad78501")
+      )
+      (map-entry 
+         (address  1 3001)
+         (uuid  "VRF_UUID:f988981f-db80-e841-b227-85c3c8fe5091")
       )
       (map-entry 
          (address  1 3001)
