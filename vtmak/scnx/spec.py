@@ -47,6 +47,18 @@ class ControlObjectSpec:
 
 
 @dataclass
+class UnitSpec:
+    unit_id: str
+    name: str
+    marking: str
+    uuid: str
+    echelon: str
+    faction: str
+    parent_uuid: str      # 상위 부대 uuid. 대대는 "" (force 루트에 건다)
+    coord: Coord
+
+
+@dataclass
 class ScnxSpec:
     scenario_id: str
     terrain: str
@@ -58,6 +70,10 @@ class ScnxSpec:
     fixed_objects: list[FixedObject] = field(default_factory=list)
     # 고정 객체에 붙는 Plan 블록(Set·Task). marking → PLN 문자열들.
     fixed_plans: dict[str, list[str]] = field(default_factory=dict)
+    # 편제(orbat)가 주어졌을 때만 채워진다.
+    units: list[UnitSpec] = field(default_factory=list)
+    # 엔티티 object_id → 소속 소대 uuid. writer가 parent-name을 잇는다.
+    unit_of_entity: dict[str, str] = field(default_factory=dict)
 
 
 SUPPRESSED_STATES = {"제압"}
@@ -307,4 +323,60 @@ def build_spec(events: list[Event], registry: dict[str, EntityDef],
             uuid=ids.alloc("control_object", lid),
             name=lid.removeprefix("LOC_"),
             coord=layout.coord(lid)))
+
+    if orbat is not None:
+        spec.units, spec.unit_of_entity = _build_units(orbat, spec, ids)
     return spec
+
+
+def _centroid(coords: list[Coord]) -> Coord:
+    """부대 좌표는 구성원 배치 좌표의 중심점이다(연구내용 §3.2).
+
+    고도는 평균이 아니라 중심점에서 다시 지형을 읽어야 맞지만, 부대는 표시용
+    노드라 지면에 박히지 않아도 된다. 평균으로 둔다.
+    """
+    n = len(coords)
+    return Coord(sum(c.lat for c in coords) / n,
+                 sum(c.lon for c in coords) / n,
+                 sum(c.alt for c in coords) / n)
+
+
+def _build_units(orbat, spec: ScnxSpec, ids: IdAllocator):
+    """편제 부대마다 uuid·좌표를 확정한다.
+
+    중대·대대 좌표는 소대 좌표들의 중심점이 아니라, 예하 **전 구성원**의
+    좌표를 접어 올려 다시 낸 중심점이다 — 소대별 인원이 다르면 두 값이
+    달라진다.
+    """
+    coord_of = {e.object_id: e.coord for e in spec.entities}
+    uuid_of = {u.unit_id: ids.alloc("unit", u.unit_id) for u in orbat.units()}
+
+    # 소대부터 채워야 중대·대대 중심점을 구성원에서 다시 접을 수 있다.
+    members: dict[str, list[Coord]] = {}
+    for u in orbat.units():
+        if u.echelon == "소대":
+            members[u.unit_id] = [coord_of[o] for o in u.members
+                                  if o in coord_of]
+    for u in orbat.units():
+        if u.echelon == "소대":
+            continue
+        kids = [x.unit_id for x in orbat.units() if x.parent == u.unit_id]
+        members[u.unit_id] = [c for k in kids for c in members.get(k, [])]
+
+    out: list[UnitSpec] = []
+    for u in orbat.units():
+        cs = members.get(u.unit_id) or []
+        if not cs:
+            raise ValueError(f"구성원이 없는 부대: {u.unit_id}")
+        out.append(UnitSpec(
+            unit_id=u.unit_id, name=u.name, marking=u.marking,
+            uuid=uuid_of[u.unit_id], echelon=u.echelon, faction=u.faction,
+            parent_uuid=uuid_of[u.parent] if u.parent else "",
+            coord=_centroid(cs)))
+
+    of_entity = {}
+    for u in orbat.units():
+        for oid in u.members:
+            if oid in coord_of:
+                of_entity[oid] = uuid_of[u.unit_id]
+    return out, of_entity

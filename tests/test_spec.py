@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from vtmak.geometry import BattlefieldLayout
+from vtmak.orbat import OrbatConfig, build_orbat
 from vtmak.paths import SCENARIO
 from vtmak.parser import PatternMap, parse_scenario
 from vtmak.ranges import WeaponRanges
@@ -16,7 +17,7 @@ from vtmak.scnx.spec import build_spec
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _build():
+def _build(orbat=None):
     cfg = ROOT / "config"
     pm = PatternMap.load(cfg / "pattern_map.csv")
     res = parse_scenario(
@@ -32,17 +33,25 @@ def _build():
                          task_ids)
     events = filter_events(res.events, keep)
     reg = {o: d for o, d in reg.items() if o in keep}
+    # 편제는 감축된(=328객체가 아니라 축소된) reg로 지어야 한다. 감축 전 reg를
+    # 넘기면 편제에 명부 밖 객체가 섞여 unit_of_entity가 어긋난다.
+    ob = build_orbat(reg, OrbatConfig.load(cfg / "orbat.json")) if orbat else None
     return build_spec(events, reg, lay, pm,
                       TaskCatalog.load(cfg / "task_catalog.csv"),
                       TaskKinds.load(cfg / "task_kinds.csv"),
                       DisCatalog.load(cfg / "dis_catalog.csv"),
                       WeaponRanges.load(cfg / "weapon_ranges.csv"),
-                      scenario_id="battle")
+                      scenario_id="battle", orbat=ob)
 
 
 @pytest.fixture(scope="module")
 def spec():
     return _build()
+
+
+@pytest.fixture(scope="module")
+def spec_with_orbat():
+    return _build(orbat=True)
 
 
 def test_entities_exclude_static_objects(spec):
@@ -424,3 +433,30 @@ def test_no_task_objects_get_no_move_or_fire_after_that_line(spec):
            and s.task_kind in ("move", "move_slow", "follow",
                                "fire_direct", "fire_indirect", "suppress")]
     assert bad == [], bad[:5]
+
+
+def test_units_are_built_when_orbat_is_given(spec_with_orbat):
+    spec = spec_with_orbat
+    assert len(spec.units) == 67
+    by_ech = {}
+    for u in spec.units:
+        by_ech[u.echelon] = by_ech.get(u.echelon, 0) + 1
+    assert by_ech == {"소대": 52, "중대": 13, "대대": 2}
+
+
+def test_unit_coord_is_the_member_centroid(spec_with_orbat):
+    """부대 위치 = 구성원 배치 좌표의 중심점(연구내용 §3.2)."""
+    spec = spec_with_orbat
+    coords = {e.object_id: e.coord for e in spec.entities}
+    pl = next(u for u in spec.units if u.echelon == "소대")
+    members = [o for o, uu in spec.unit_of_entity.items() if uu == pl.uuid]
+    assert members
+    lat = sum(coords[o].lat for o in members) / len(members)
+    lon = sum(coords[o].lon for o in members) / len(members)
+    assert abs(pl.coord.lat - lat) < 1e-9
+    assert abs(pl.coord.lon - lon) < 1e-9
+
+
+def test_every_entity_maps_to_a_platoon_uuid(spec_with_orbat):
+    spec = spec_with_orbat
+    assert set(spec.unit_of_entity) == {e.object_id for e in spec.entities}
