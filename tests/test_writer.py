@@ -17,6 +17,7 @@ from vtmak.scnx.gates import check_g3, weapons_in
 from vtmak.scnx.golden import Golden, _balanced_records
 from vtmak.scnx.plan import SKIP_UNSUPPORTED, PlanStep
 from vtmak.scnx.pack import ensure_golden
+from vtmak.scnx.places import PlaceCodes
 from vtmak.scnx.spec import build_spec
 from vtmak.scnx.writer import get_writer
 
@@ -65,6 +66,26 @@ def spec_with_orbat():
 @pytest.fixture(scope="module")
 def writer():
     return get_writer("template", str(GOLDEN))
+
+
+@pytest.fixture(scope="module")
+def writer_with_place_codes():
+    """place_codes를 준 writer.
+
+    F3 리뷰: 위 `writer` 픽스처는 place_codes 없이 만들어져 `_oob`가 전부
+    `P{k}` 폴백 경로를 탄다. 그래서 04에서 `place_codes=`가 빠지거나
+    시그니처가 리팩터돼도 기존 테스트는 초록으로 남는다. 실제로 04가
+    쓰는 것과 같은 경로(place_codes 있음)를 별도 픽스처로 추가한다 —
+    기존 픽스처는 그대로 두어 폴백 경로 커버리지도 잃지 않는다.
+    """
+    cfg = ROOT / "config"
+    place_codes = PlaceCodes.load(cfg / "location_codes.csv")
+    return get_writer("template", str(GOLDEN), place_codes=place_codes)
+
+
+@pytest.fixture(scope="module")
+def oob_with_place_codes(spec_with_orbat, writer_with_place_codes):
+    return writer_with_place_codes._oob(spec_with_orbat)
 
 
 @pytest.fixture(scope="module")
@@ -331,6 +352,26 @@ def test_omp_lists_every_object_with_units(scnx_with_units, omp_with_units,
                               + len(spec_with_orbat.units)
                               + len(spec_with_orbat.control_objects)
                               + len(spec_with_orbat.fixed_objects))
+
+
+def test_control_point_markings_are_place_codes_not_p_numbers(
+        oob_with_place_codes, spec_with_orbat):
+    """place_codes를 준 실제 경로(04와 같은 경로)에서 통제점 marking을 본다.
+
+    place_codes 없이 만든 writer로는 `_oob`가 항상 `P{k}` 폴백을 타서, 04에서
+    `place_codes=` 인자가 빠지거나 시그니처가 리팩터돼도 기존 3개 `_oob`
+    테스트가 계속 초록이었다(F3). 여기서는 marking-text가 지명 코드이고
+    `P\\d+` 형태가 0개임을 직접 단언한다.
+    """
+    marks = re.findall(r'\(marking-text "([^"]*)"\)', oob_with_place_codes)
+    assert len(marks) == (len(spec_with_orbat.entities)
+                          + len(spec_with_orbat.control_objects)
+                          + len(spec_with_orbat.units))
+    n_control = len(spec_with_orbat.control_objects)
+    assert n_control > 0
+    p_number = re.compile(r"^P\d+$")
+    p_number_marks = [m for m in marks if p_number.match(m)]
+    assert p_number_marks == [], p_number_marks
 
 
 def test_unit_records_leave_formation_name_blank(scnx_with_units,
