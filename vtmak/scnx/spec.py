@@ -351,17 +351,20 @@ def _build_units(orbat, spec: ScnxSpec, ids: IdAllocator):
     coord_of = {e.object_id: e.coord for e in spec.entities}
     uuid_of = {u.unit_id: ids.alloc("unit", u.unit_id) for u in orbat.units()}
 
-    # 소대부터 채워야 중대·대대 중심점을 구성원에서 다시 접을 수 있다.
+    # 자식이 부모보다 먼저 채워져야 한다 — 중대·대대는 예하 구성원을 접어
+    # 올려 중심점을 다시 내므로, 그 시점에 자식의 members가 비어 있으면
+    # (조용히 []) 중대·대대 좌표가 직할 소대만의 중심점으로 잘못 좁아진다.
+    # orbat.units()는 부모-먼저(대대→중대→소대) 정렬이므로 reversed()로
+    # 순회해 자식(소대)부터 처리한다(2026-08-17 리뷰: 대대 좌표가 직할 소대
+    # 구성원만 반영하고 예하 중대 구성원을 놓치는 버그 — 실측 42m 오차).
     members: dict[str, list[Coord]] = {}
-    for u in orbat.units():
+    for u in reversed(orbat.units()):
         if u.echelon == "소대":
             members[u.unit_id] = [coord_of[o] for o in u.members
                                   if o in coord_of]
-    for u in orbat.units():
-        if u.echelon == "소대":
-            continue
-        kids = [x.unit_id for x in orbat.units() if x.parent == u.unit_id]
-        members[u.unit_id] = [c for k in kids for c in members.get(k, [])]
+        else:
+            kids = [x.unit_id for x in orbat.units() if x.parent == u.unit_id]
+            members[u.unit_id] = [c for k in kids for c in members.get(k, [])]
 
     out: list[UnitSpec] = []
     for u in orbat.units():
