@@ -233,13 +233,16 @@ def test_unknown_control_point_name_survives():
 def test_no_bare_control_point_numbers_survive():
     """산출 CSV에 P\\d+ 형태 object가 남으면 지명화가 반쪽이다.
 
-    대조표가 있는 실행에서만 의미가 있다 — 없으면 원문을 남기는 것이 옳다.
+    옛 판 marking(`P3`, `P10`)을 대조표에 **둔** 채로 확인한다 —
+    `C_VALLEY`처럼 애초에 `P\\d+` 꼴이 아닌 marking을 쓰면 조회가 죽어도
+    통과해 버려 회귀를 못 잡는다. 대조표가 있는 실행에서만 의미가 있다 —
+    없으면 원문을 남기는 것이 옳다.
     """
     import re
     rows = [{"subject": "FRINF001", "predicate": f'Move-To Waypoint: "{c}"',
              "object": "-", "latitude": "21.38", "longitude": "-157.74",
              "timestamp": "2026-08-09T08:53:44.000Z", "source": "UAV 1"}
-            for c in ("C_VALLEY", "S_DEF1")]
-    names = {"C_VALLEY": "LOC_중앙계곡", "S_DEF1": "LOC_남측제1방어선"}
+            for c in ("P3", "P10")]
+    names = {"P3": "LOC_중앙계곡", "P10": "LOC_남측제1방어선"}
     out, _, _, _ = rewrite(rows, _layout(), place_names=names)
     assert not [r for r in out if re.fullmatch(r"P\d+", r["object"])]
