@@ -120,3 +120,38 @@ def test_aggregate_is_not_mistaken_for_an_entity(golden):
     새어 들어가면 보병 대신 부대 껍데기가 복제된다."""
     for o in golden.objects:
         assert o.kind != "aggregate"
+
+
+def test_aggregate_header_does_not_match_hyphenated_top_level_fields():
+    """합성 `.oob` 조각으로 `_parse_aggregates`를 직접 단위 테스트한다.
+
+    실제 골든에서는 `(aggregate-state ...)`·`(aggregate-resolution-...)`가
+    항상 진짜 부대 레코드 안쪽에만 있어, 위 두 테스트는 헤더를 공백 없는
+    `"(aggregate"`로 되돌려도 통과해버린다(리뷰에서 지적됨) — 어느 헤더를
+    쓰든 `_balanced_records`가 바깥 레코드를 통째로 삼켜 두 매칭이 실제
+    골든에 대해서는 구분되지 않기 때문이다. 이 필드가 부대 레코드 **바깥**
+    (최상위)에 오는 경우를 합성으로 만들어 직접 확인해야 방어가 의미를
+    가진다."""
+    from vtmak.scnx.golden import _parse_aggregates
+
+    bogus_top_level = (
+        '(aggregate-resolution-process-state-repository-default\n'
+        '   (object-type 3 (99 9 9 9 99 9 99))\n'
+        ')\n'
+    )
+    real_record = (
+        '(aggregate \n'
+        '   (vrf-entity "vrf-entity:1")\n'
+        '   (uuid "VRF_UUID:11111111-1111-1111-1111-111111111111")\n'
+        '   (marking-text "1-BN")\n'
+        '   (object-type 3 (11 1 0 0 34 0 11))\n'
+        '   (aggregate-state Disaggregated)\n'
+        ')\n'
+    )
+    oob = bogus_top_level + real_record
+
+    aggs = _parse_aggregates(oob)
+
+    assert len(aggs) == 1
+    assert aggs[0].uuid == "11111111-1111-1111-1111-111111111111"
+    assert aggs[0].raw.startswith("(aggregate ")
