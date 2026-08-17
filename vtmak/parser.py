@@ -112,9 +112,18 @@ class ParseResult:
 
 
 class PatternMap:
+    """원문 문장 종류 → 술어 + task_kind.
+
+    키가 셋이고 구체적인 쪽이 이긴다.
+      state_transition  '<이전>><다음>'  상태전이. 가장 구체적이다
+      move_action       이동 행동 이름    moveTo 안에서 갈린다
+      template          문장 템플릿 이름  기본값
+    """
+
     def __init__(self) -> None:
         self._tmpl: dict[str, tuple[str, str]] = {}
         self._move: dict[str, tuple[str, str]] = {}
+        self._trans: dict[tuple[str, str], tuple[str, str]] = {}
 
     @classmethod
     def load(cls, path) -> "PatternMap":
@@ -127,17 +136,38 @@ class PatternMap:
                     pm._tmpl[key] = val
                 elif kind == "move_action":
                     pm._move[key] = val
+                elif kind == "state_transition":
+                    if ">" not in key:
+                        raise ValueError(
+                            "state_transition 키는 '<이전 상태>><다음 상태>' "
+                            f"형식이어야 한다: {key!r}")
+                    a, b = key.split(">", 1)
+                    pm._trans[(a.strip(), b.strip())] = val
         return pm
 
-    def predicate(self, template: str, action_label: str = "") -> str:
+    def _row(self, template: str, action_label: str,
+             state_from: str, state_to: str) -> tuple[str, str] | None:
+        hit = self._trans.get((state_from, state_to))
+        if hit is not None:
+            return hit
         if template == "moveTo" and action_label in self._move:
-            return self._move[action_label][0]
-        return self._tmpl.get(template, ("", ""))[0]
+            return self._move[action_label]
+        return self._tmpl.get(template)
 
-    def task_kind(self, template: str, action_label: str = "") -> str:
-        if template == "moveTo" and action_label in self._move:
-            return self._move[action_label][1]
-        return self._tmpl.get(template, ("", "noop"))[1]
+    def predicate_of(self, template: str, action_label: str = "",
+                     state_from: str = "", state_to: str = "") -> str:
+        row = self._row(template, action_label, state_from, state_to)
+        return row[0] if row else ""
+
+    def task_kind_of(self, event) -> str:
+        """Event를 통째로 받는다.
+
+        인자를 옵션으로 늘리면 state_from/state_to를 안 넘긴 호출부가 조용히
+        다른 답을 받는다. 호출부가 여섯 곳뿐이라 한 번에 바꾼다.
+        """
+        row = self._row(event.template, event.action_label,
+                        event.state_from, event.state_to)
+        return row[1] if row else "noop"
 
 
 def _sentences(text: str):
@@ -167,12 +197,14 @@ def parse_scenario(text: str, pattern_map: PatternMap) -> ParseResult:
             if g.get("t") is not None:
                 carry_time = int(g["t"]) * 60 + int(g["s"])
             act = (g.get("act") or "").strip()
+            s_from = (g.get("s0") or "").strip()
+            s_to = (g.get("s1") or "").strip()
             res.events.append(Event(
                 event_id=f"E{seq:05d}",
                 time_s=carry_time,
                 line_no=line_no,
                 template=name,
-                predicate=pattern_map.predicate(name, act),
+                predicate=pattern_map.predicate_of(name, act, s_from, s_to),
                 actor=g.get("a") or "",
                 actor_class=(g.get("m") or "").strip(),
                 actor_role=(g.get("a_role") or "").strip(),
@@ -185,8 +217,8 @@ def parse_scenario(text: str, pattern_map: PatternMap) -> ParseResult:
                 source_obj=g.get("srcobj") or "",
                 source_class=(g.get("sm") or "").strip(),
                 action_label=act,
-                state_from=(g.get("s0") or "").strip(),
-                state_to=(g.get("s1") or "").strip(),
+                state_from=s_from,
+                state_to=s_to,
                 source_line=sent,
             ))
             break

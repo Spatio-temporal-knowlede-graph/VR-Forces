@@ -14,3 +14,7 @@ VR-Forces catalog/
 # 여기에 파일명을 추가할 것.
 build/csv/ground_truth_20260804_dataset.csv
 build/stkg/ground_truth_20260804_annotated.csv
+build/csv/ground_truth_20260806_155424_dataset.csv
+build/stkg/ground_truth_20260806_155424_annotated.csv
+build/csv/ground_truth_20260809_175237_dataset.csv
+build/stkg/ground_truth_20260809_175237_annotated.csv

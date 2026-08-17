@@ -20,7 +20,7 @@ from vtmak.geometry import BattlefieldLayout                      # noqa: E402
 from vtmak.parser import Event, PatternMap                        # noqa: E402
 from vtmak.ranges import WeaponRanges                             # noqa: E402
 from vtmak.registry import ClassMap, build_registry               # noqa: E402
-from vtmak.scnx.catalog import DisCatalog, TaskCatalog
+from vtmak.scnx.catalog import DisCatalog, TaskCatalog, TaskKinds
 from vtmak.scnx.fixed import load_fixed            # noqa: E402
 from vtmak.scnx.gates import check_g3                             # noqa: E402
 from vtmak.scnx.golden import Golden                              # noqa: E402
@@ -63,9 +63,11 @@ def main() -> int:
         print("G0 차단 — 레이아웃을 고칠 것 (config/battlefield_layout.json)")
         return 1
 
-    fixed = load_fixed(CFG / "fixed_objects.json", ROOT)
+    fixed = load_fixed(CFG / "fixed_objects.json", ROOT, layout)
     spec = build_spec(events, registry, layout, pmap,
-                      TaskCatalog.load(CFG / "task_catalog.csv"), dis, ranges,
+                      TaskCatalog.load(CFG / "task_catalog.csv"),
+                      TaskKinds.load(CFG / "task_kinds.csv"),
+                      dis, ranges,
                       scenario_id="battle", fixed=fixed)
 
     golden_path = ensure_golden(args.golden)
@@ -81,10 +83,19 @@ def main() -> int:
     print(f"엔티티 {len(spec.entities)} · 통제점 {len(spec.control_objects)} · "
           f"고정 객체 {len(spec.fixed_objects)} · "
           f"플랜 보유 {planned} · 태스크 {tasks}")
-    if spec.fixed_objects:
-        print("  고정(플랜 없음): "
-              + ", ".join(f"{f.marking}@{f.coord.alt:.0f}m"
-                          for f in spec.fixed_objects))
+    uavs = [f for f in spec.fixed_objects if not f.is_route]
+    routes = [f for f in spec.fixed_objects if f.is_route]
+    if uavs:
+        # 고정 객체는 명부 규모와 무관하게 같은 배치를 갖는다. 순찰 중심과
+        # 고도, 그리고 몇 바퀴 도는지가 여기서 바로 보여야 한다.
+        print("  고정(규모 불변): "
+              + ", ".join(
+                  f"{f.marking}@{f.coord.alt:.0f}m"
+                  + (f"↻{f.patrol_center_loc.removeprefix('LOC_')}"
+                     f"×{f.patrol_laps}바퀴" if f.patrol_center_loc else "")
+                  + (f"[{'+'.join(f.plan_actions)}]" if f.plan_actions else "")
+                  for f in uavs)
+              + (f" · 순찰로 {len(routes)}" if routes else ""))
     print(f"→ {out}")
     return 0
 

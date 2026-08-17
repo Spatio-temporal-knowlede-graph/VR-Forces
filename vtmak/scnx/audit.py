@@ -17,8 +17,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..parser import Event
+from .catalog import TaskKinds
 from .golden import _balanced_records  # 괄호 균형 레코드 절단(같은 포맷)
-from .plan import REF_FIELD
 from .spec import ScnxSpec
 
 _UUID_RE = re.compile(r'VRF_UUID:([0-9a-fA-F][0-9a-fA-F-]+)')
@@ -186,13 +186,14 @@ def hhmmss(t: int | None) -> str:
     return f"{t // 60:02d}:{t % 60:02d}"
 
 
-def build_rows(spec: ScnxSpec, contents: ScnxContents,
+def build_rows(spec: ScnxSpec, contents: ScnxContents, kinds: TaskKinds,
                events: list[Event] | None = None
                ) -> tuple[list[TaskRow], list[ObjectRow], list[str]]:
     """스펙(시각·의미) × .scnx 실측(태스크)을 엮어 두 표와 경고를 만든다.
 
     events를 주면 좌표로 저작된 태스크(move-to-location-task 등, uuid가 없다)의
-    참조 대상도 원문 이벤트에서 되살려 ref_id에 채운다.
+    참조 대상도 원문 이벤트에서 되살려 ref_id에 채운다. kinds는 그 참조가
+    어느 필드에 있는지(config/task_kinds.csv) 찾는 데 쓴다.
     """
     warnings: list[str] = []
     by_event = {e.event_id: e for e in (events or [])}
@@ -204,7 +205,10 @@ def build_rows(spec: ScnxSpec, contents: ScnxContents,
     if missing:
         warnings.append(f".oob에 없는 스펙 엔티티 {len(missing)}개: "
                         + ", ".join(missing[:5]))
-    orphan = set(contents.plans) - set(ent_name)
+    # 고정 객체(UAV)도 Set만 든 플랜을 갖는다 — 스펙이 아는 플랜이므로
+    # 주인 없는 플랜이 아니다.
+    fixed_name = {f.uuid: f.marking for f in spec.fixed_objects}
+    orphan = set(contents.plans) - set(ent_name) - set(fixed_name)
     if orphan:
         warnings.append(f"주인 없는 플랜 {len(orphan)}개")
 
@@ -226,7 +230,7 @@ def build_rows(spec: ScnxSpec, contents: ScnxContents,
             ref_id, ref_kind = _resolve_ref(t, ent_name, ctl_name)
             if not ref_id:
                 ref_id = _event_ref(by_event.get(step.event_id),
-                                    step.task_kind)
+                                    step.task_kind, kinds)
                 ref_kind = "COORD" if ref_id else ""
             rows.append(TaskRow(
                 object_id=e.object_id, name=e.name, faction=e.faction,
@@ -251,7 +255,8 @@ def build_rows(spec: ScnxSpec, contents: ScnxContents,
                 event_id=step.event_id, template=step.template,
                 task_kind=step.task_kind, action_label=step.action_label or "",
                 task_type="", script_id="",
-                ref_id=_event_ref(by_event.get(step.event_id), step.task_kind),
+                ref_id=_event_ref(by_event.get(step.event_id), step.task_kind,
+                                  kinds),
                 ref_kind="",
                 in_scnx=False, note="; ".join(step.issues) or "태스크 미생성"))
         rows.sort(key=lambda r: (r.time_s if r.time_s is not None else 0,
@@ -284,15 +289,18 @@ def _resolve_ref(task: ScnxTask | None, ent: dict[str, str],
     return "", ""
 
 
-def _event_ref(e: Event | None, kind: str) -> str:
+def _event_ref(e: Event | None, kind: str, kinds: TaskKinds) -> str:
     """좌표로 저작된 태스크의 참조 대상을 원문 이벤트에서 되살린다.
 
     '좌표로 이동'·'제압사격'·'좌표 대상 간접사격'은 .pln에 uuid가 아니라
     ECEF 좌표만 남는다. 표에서 '어디로/누구를'이 비면 읽을 수 없다.
+
+    동반 행동(`move_slow:속도 지정`처럼 `기반kind:행동`)은 task_kinds.csv에
+    없는 이름이다. 참조는 바로 앞뒤의 본 태스크 줄이 이미 보여주므로 비운다.
     """
-    if e is None or kind == "set_speed":
+    if e is None or not kinds.known(kind):
         return ""
-    field = REF_FIELD.get(kind, "dst")
+    field = kinds.ref_field(kind)
     if field == "unit_leader":       # 선두는 .pln uuid로만 알 수 있다
         return ""
     return getattr(e, field, "") or e.dst or e.target or ""

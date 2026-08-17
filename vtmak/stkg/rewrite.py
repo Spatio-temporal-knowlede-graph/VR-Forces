@@ -1,22 +1,32 @@
 """시뮬레이터 CSV 후처리 — 술어를 정규형으로 바꾸고 object를 채운다.
 
-**열을 늘리지 않는다.** 내보내기가 준 8열 그대로 낸다. 파생 정보를 열로
-붙이면 원본과 대조가 안 되고, STKG 쪽에서 어느 열이 관측이고 어느 열이
-우리가 만든 것인지 매번 되물어야 한다.
+**열을 늘리지 않는다.** 내보내기가 준 열을 순서까지 그대로 낸다. 판마다
+열이 다르므로(20260803은 8열 끝이 CID, 20260809는 CID 대신 상태 열 10개)
+목록을 못박지 않고 입력 헤더를 그대로 물려받는다. 파생 정보를 열로 붙이면
+원본과 대조가 안 되고, STKG 쪽에서 어느 열이 관측이고 어느 열이 우리가
+만든 것인지 매번 되물어야 한다.
 
 바꾸는 것은 두 열뿐이다.
 
   predicate   시뮬레이터 원문(`Move to {-5499107.729384, ...}`)을 정규형으로
-  object      원문이 전 행 `-`라 비어 있던 자리를 대상으로 채운다
+  object      원문이 대개 `-`라 비어 있던 자리를 대상으로 채운다
 
 | 원문 | predicate | object |
 |---|---|---|
 | `Move to {좌표}` | `move to` | 좌표를 붙인 지명 |
+| `Move-To Waypoint: "P10"` | `move to` | `P10` (통제점) |
 | `Follow-Entity Entity: "X"` | `Follow-Entity` | `X` |
 | `FFE-On-Location "Location={좌표}"` | `FFE-on-Location` | 좌표를 붙인 지명 |
+| `Fire Weapon` | `Fire-Weapon` | 내보내기가 준 object 열 그대로 |
+| `Wait-Duration Seconds-To-Wait:60` | `Wait-Duration` | 비움 |
 | `find_cover: ... Threat=X; ...` | `find_cover` | `X` |
+| `find_firing_position: ... Threat=X; ...` | `find_firing_position` | `X` |
 | `None` | `none` | 비움 |
 | (발사체 행) | `fired_by` | 확정된 사수. 못 하면 비움 |
+
+`Fire Weapon`은 20260809판에서 새로 나왔고, 유일하게 내보내기가 대상을
+미리 채워 준다(실측 ground_truth 650행). 우리가 만든 값이 아니라 관측이므로
+덮어쓰지 않고 그대로 통과시킨다.
 
 행은 지운다. 시뮬레이터 인프라 객체(`N Force`, `Observer N`, `GlobalEnv N`)는
 원문 시나리오에 없고 물리 객체도 아니다. `Force` 노드는 좌표까지
@@ -33,18 +43,23 @@ from dataclasses import dataclass, field
 from ..geometry import Coord
 from . import firing
 from .filter import Disposition, classify
-from .locate import snap
+from .locate import is_control_point, is_place, snap
 from .predicate import parse
 from .resolve import to_marking
+from .schema import object_of
 
-# 내보내기가 준 8열. 순서까지 그대로 둔다.
+# 20260803판이 준 8열. 이제는 입력에 헤더가 없을 때만 쓰는 기본값이다 —
+# 실제 출력 열은 out_columns()가 입력에서 물려받는다.
 OUT_COLS = ["subject", "predicate", "object", "latitude", "longitude",
             "timestamp", "source", "CID"]
 
 PRED_MOVE = "move to"
 PRED_FOLLOW = "Follow-Entity"
 PRED_FFE = "FFE-on-Location"
+PRED_FIRE = "Fire-Weapon"
+PRED_WAIT = "Wait-Duration"
 PRED_COVER = "find_cover"
+PRED_FIRING_POS = "find_firing_position"
 PRED_FIRED_BY = "fired_by"
 PRED_NONE = "none"
 
@@ -53,11 +68,21 @@ _NAME = {
     "moves_to": PRED_MOVE,
     "follows": PRED_FOLLOW,
     "fires_at": PRED_FFE,
+    "fires_weapon_at": PRED_FIRE,
+    "waits": PRED_WAIT,
     "takes_cover_from": PRED_COVER,
+    "takes_firing_position_against": PRED_FIRING_POS,
 }
 
-# object 열이 비었음을 뜻하는 값. 원문은 전 행 '-'였다.
+# object 열이 비었음을 뜻하는 값. 원문은 대개 '-'다.
 EMPTY = ""
+
+
+def out_columns(rows) -> list[str]:
+    """출력 열 = 입력이 준 열, 순서까지 그대로. 입력이 비면 기본 8열."""
+    for row in rows:
+        return list(row)
+    return list(OUT_COLS)
 
 
 @dataclass
@@ -76,6 +101,7 @@ class Tally:
     # 등장 객체. 행 수와 달리 '몇 개가 나오는가'를 센다.
     subjects: set = field(default_factory=set)          # 남은 주체 전부
     munition_subjects: set = field(default_factory=set)  # 그중 발사체
+    control_subjects: set = field(default_factory=set)   # 그중 통제점(자리)
     dropped_names: set = field(default_factory=set)      # 지운 인프라 객체
     object_entities: set = field(default_factory=set)    # object로 등장한 객체
     object_locations: set = field(default_factory=set)   # object로 등장한 지명
@@ -83,13 +109,15 @@ class Tally:
 
     @property
     def entities(self) -> int:
-        """발사체를 뺀 주체 수. 실제 전투 객체다."""
-        return len(self.subjects) - len(self.munition_subjects)
+        """발사체와 통제점을 뺀 주체 수. 실제 전투 객체다."""
+        return (len(self.subjects) - len(self.munition_subjects)
+                - len(self.control_subjects))
 
     @property
     def seen(self) -> int:
-        """주체든 대상이든 한 번이라도 이름이 나온 객체 수."""
-        return len(self.subjects | self.object_entities)
+        """주체든 대상이든 한 번이라도 이름이 나온 객체 수. 자리는 뺀다."""
+        return len((self.subjects - self.control_subjects)
+                   | self.object_entities)
 
 
 def _is_coord(value: str) -> bool:
@@ -123,6 +151,7 @@ def rewrite(rows, layout, uuid_map=None, control_points=None):
     """
     uuid_map = uuid_map or {}
     tally = Tally()
+    cols = out_columns(rows)
 
     kept = []
     for row in rows:
@@ -149,12 +178,12 @@ def rewrite(rows, layout, uuid_map=None, control_points=None):
 
     out = []
     for row in kept:
-        rec = {c: row.get(c, "") for c in OUT_COLS}
+        rec = {c: row.get(c, "") for c in cols}
         rec["predicate"], rec["object"] = _fields(row, layout, uuid_map,
                                                   control_points, links, tally)
         if rec["object"]:
             tally.with_object += 1
-            if rec["object"].startswith("LOC_"):
+            if is_place(rec["object"]):
                 tally.object_locations.add(rec["object"])
             elif _is_coord(rec["object"]):
                 # 지명에 못 붙은 좌표 폴백. 객체가 아니라 자리다.
@@ -165,6 +194,8 @@ def rewrite(rows, layout, uuid_map=None, control_points=None):
         tally.subjects.add(rec["subject"])
         if firing.is_munition(rec["subject"]):
             tally.munition_subjects.add(rec["subject"])
+        elif is_control_point(rec["subject"]):
+            tally.control_subjects.add(rec["subject"])
         out.append(rec)
         tally.out += 1
 
@@ -196,6 +227,10 @@ def _fields(row, layout, uuid_map, control_points, links, tally):
         tally.unmapped[p.predicate] += 1
         return raw, EMPTY
 
+    if p.object_kind == "given":
+        # 대상이 predicate가 아니라 object 열에 있다(`Fire Weapon`). 내보내기가
+        # 준 관측이므로 그대로 통과시킨다.
+        return name, object_of(row)
     if p.object_kind == "coord":
         return name, _snap_object(p.object_raw, layout, control_points)
     if p.object_kind == "uuid":

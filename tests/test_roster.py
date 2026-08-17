@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def _task_ids(events):
     pm = PatternMap.load(ROOT / "config" / "pattern_map.csv")
     return {e.event_id for e in events
-            if pm.task_kind(e.template, e.action_label) not in ("", "noop")}
+            if pm.task_kind_of(e) not in ("", "noop")}
 
 
 @pytest.fixture(scope="module")

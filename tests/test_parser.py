@@ -1,10 +1,11 @@
+import re
 from collections import Counter
 from pathlib import Path
 
 import pytest
 
 from vtmak.paths import SCENARIO
-from vtmak.parser import KNOWN_TRUNCATION, PatternMap, parse_scenario
+from vtmak.parser import Event, KNOWN_TRUNCATION, PatternMap, parse_scenario
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = SCENARIO
@@ -116,3 +117,64 @@ def test_event_ids_are_unique_and_deterministic(result):
     pm = PatternMap.load(PMAP)
     again = parse_scenario(SRC.read_text(encoding="utf-8"), pm)
     assert [e.event_id for e in again.events] == ids
+
+
+def test_state_transition_row_overrides_the_template_row(tmp_path):
+    """상태전이는 template보다 구체적이라 우선한다.
+
+    stateChange 1,294건 중 1,226건은 같은 시각 같은 객체에 이미 task를 내는
+    이벤트가 붙어 있다(2026-08-05 실측). 그래서 template 단위로 task를 주면
+    중복이다. 짝이 없는 전이만 골라 쓰려면 전이 단위 키가 있어야 한다.
+    """
+    p = tmp_path / "pattern_map.csv"
+    p.write_text(
+        "key,kind,predicate,task_kind,note\n"
+        "stateChange,template,stateChangedTo,noop,\n"
+        "사격 준비 대기>사격 준비,state_transition,preparesFiringPosition,find_fp,\n",
+        encoding="utf-8", newline="")
+    pm = PatternMap.load(p)
+
+    hit = Event(event_id="E1", time_s=0, line_no=1, predicate="",
+                template="stateChange", actor="FR-MORT-001",
+                state_from="사격 준비 대기", state_to="사격 준비")
+    miss = Event(event_id="E2", time_s=0, line_no=1, predicate="",
+                 template="stateChange", actor="FR-INF-001",
+                 state_from="기동", state_to="후퇴")
+
+    assert pm.task_kind_of(hit) == "find_fp"
+    assert pm.task_kind_of(miss) == "noop"
+    assert pm.predicate_of("stateChange", "", "사격 준비 대기", "사격 준비") \
+        == "preparesFiringPosition"
+    assert pm.predicate_of("stateChange", "", "기동", "후퇴") == "stateChangedTo"
+
+
+def test_move_action_still_wins_over_template(tmp_path):
+    """기존 move_action 우선순위가 그대로여야 한다(회귀 방지)."""
+    p = tmp_path / "pattern_map.csv"
+    p.write_text(
+        "key,kind,predicate,task_kind,note\n"
+        "moveTo,template,moveTo,move,\n"
+        "공격 대형 이동,move_action,approach,follow,\n",
+        encoding="utf-8", newline="")
+    pm = PatternMap.load(p)
+    e = Event(event_id="E1", time_s=0, line_no=1, predicate="",
+              template="moveTo", actor="FR-INF-001",
+              action_label="공격 대형 이동")
+    assert pm.task_kind_of(e) == "follow"
+    assert pm.predicate_of("moveTo", "공격 대형 이동", "", "") == "approach"
+
+
+def test_malformed_state_transition_key_fails_loudly(tmp_path):
+    """'>' 없는 state_transition 키는 조용히 무시하지 않고 즉시 죽는다.
+
+    이 프로젝트의 원칙은 '모르는 키는 조용히 no-op하지 않는다'다. 여기서
+    조용히 넘어가면 오타 하나가 상태전이 하나를 통째로 안 걸리게 만들고,
+    그걸 알아채는 유일한 방법이 산출물을 손으로 대조하는 것뿐이게 된다.
+    """
+    p = tmp_path / "pattern_map.csv"
+    p.write_text(
+        "key,kind,predicate,task_kind,note\n"
+        "사격 준비 대기,state_transition,preparesFiringPosition,find_fp,\n",
+        encoding="utf-8", newline="")
+    with pytest.raises(ValueError, match=re.escape("사격 준비 대기")):
+        PatternMap.load(p)

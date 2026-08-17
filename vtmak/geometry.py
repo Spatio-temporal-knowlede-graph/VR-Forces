@@ -91,6 +91,102 @@ def ground_distance(a: Coord, b: Coord) -> float:
     return math.dist(a.to_ecef(), b.to_ecef())
 
 
+def _ned_basis(lat_deg: float, lon_deg: float
+               ) -> tuple[tuple[float, float, float], ...]:
+    """지점의 국지 NED 축을 ECEF 성분으로. (북, 동, 하) 순."""
+    lat, lon = math.radians(lat_deg), math.radians(lon_deg)
+    sla, cla = math.sin(lat), math.cos(lat)
+    slo, clo = math.sin(lon), math.cos(lon)
+    north = (-sla * clo, -sla * slo, cla)
+    east = (-slo, clo, 0.0)
+    down = (-cla * clo, -cla * slo, -sla)
+    return north, east, down
+
+
+def tait_bryan(c: Coord, heading_rad: float, pitch_rad: float = 0.0,
+               roll_rad: float = 0.0) -> tuple[float, float, float]:
+    """국지 방위·피치·롤 → `.oob`의 `(orientation-tait-bryan ψ θ φ)`.
+
+    VR-Forces의 자세는 DIS 오일러각이다 — **ECEF 기준**이라 같은 방위라도
+    위경도가 다르면 값이 달라진다. 그래서 방위각을 그대로 써 넣을 수 없다.
+
+    DIS 정의에서 세계→동체 방향코사인 행렬은 R_x(φ)·R_y(θ)·R_z(ψ)이고, 그
+    행들이 동체 축(전·우·하)을 ECEF 성분으로 적은 것이다. 따라서 전방 축 f와
+    우현 축 r, 하방 축 d를 국지 NED에서 만들어 ECEF로 옮긴 뒤 되읽으면 된다.
+
+        ψ = atan2(f_y, f_x)
+        θ = -asin(f_z)
+        φ = atan2(r_z, d_z)
+
+    되읽기(`heading_from_tait_bryan`)로 왕복이 맞는지 테스트가 확인한다.
+    """
+    n, e, dn = _ned_basis(c.lat, c.lon)
+    sh, ch = math.sin(heading_rad), math.cos(heading_rad)
+    sp, cp = math.sin(pitch_rad), math.cos(pitch_rad)
+    sr, cr = math.sin(roll_rad), math.cos(roll_rad)
+    # 동체 축을 NED 성분으로
+    fwd_ned = (ch * cp, sh * cp, -sp)
+    rgt_ned = (ch * sp * sr - sh * cr, sh * sp * sr + ch * cr, cp * sr)
+    dwn_ned = (ch * sp * cr + sh * sr, sh * sp * cr - ch * sr, cp * cr)
+
+    def to_ecef(v):
+        return tuple(v[0] * n[i] + v[1] * e[i] + v[2] * dn[i] for i in range(3))
+
+    f, r, d = to_ecef(fwd_ned), to_ecef(rgt_ned), to_ecef(dwn_ned)
+    psi = math.atan2(f[1], f[0])
+    theta = -math.asin(max(-1.0, min(1.0, f[2])))
+    phi = math.atan2(r[2], d[2])
+    return (psi, theta, phi)
+
+
+def heading_from_tait_bryan(c: Coord, psi: float, theta: float,
+                            phi: float) -> tuple[float, float, float]:
+    """`tait_bryan`의 역. (방위, 피치, 롤) 라디안. 방위는 0 이상 2π 미만."""
+    n, e, dn = _ned_basis(c.lat, c.lon)
+    cps, sps = math.cos(psi), math.sin(psi)
+    cth, sth = math.cos(theta), math.sin(theta)
+    cph, sph = math.cos(phi), math.sin(phi)
+    f = (cth * cps, cth * sps, -sth)
+    r = (sph * sth * cps - cph * sps, sph * sth * sps + cph * cps, sph * cth)
+
+    def to_ned(v):
+        return (sum(v[i] * n[i] for i in range(3)),
+                sum(v[i] * e[i] for i in range(3)),
+                sum(v[i] * dn[i] for i in range(3)))
+
+    fn, rn = to_ned(f), to_ned(r)
+    heading = math.atan2(fn[1], fn[0]) % (2 * math.pi)
+    pitch = math.atan2(-fn[2], math.hypot(fn[0], fn[1]))
+    roll = math.atan2(rn[2], math.hypot(rn[0], rn[1]) or 1e-12)
+    return (heading, pitch, roll)
+
+
+def bearing_elevation(a: Coord, b: Coord) -> tuple[float, float]:
+    """a에서 b를 볼 때의 방위·고각(라디안).
+
+    방위는 진북 0, 시계 방향으로 증가하며 0 이상 2π 미만이다. 고각은 수평이
+    0이고 올려다보면 양수다.
+
+    거리는 ground_distance(ECEF 직선거리)를 쓰지 않는다. 그건 고도차를
+    포함하므로 고각 계산에 넣으면 자기 참조가 된다. 수평 성분만 _deg_scales로
+    미터로 바꿔 쓴다 — 위도별 도-미터 환산이 이미 거기 있다.
+
+    # VERIFY-ON-TARGET: VR-Forces의 aiming-azimuth가 진북 기준 시계 방향
+    # 라디안이라는 것은 확인하지 못했다. 틀리면 포신 방향만 어긋나고
+    # task 자체는 돈다.
+    """
+    lat_m, lon_m = _deg_scales((a.lat + b.lat) / 2.0)
+    north = (b.lat - a.lat) * lat_m
+    east = (b.lon - a.lon) * lon_m
+    flat = math.hypot(north, east)
+    if flat == 0.0 and b.alt == a.alt:
+        return (0.0, 0.0)
+    az = math.atan2(east, north) % (2 * math.pi)
+    el = math.atan2(b.alt - a.alt, flat) if flat else math.copysign(
+        math.pi / 2, b.alt - a.alt)
+    return (az, el)
+
+
 class BattlefieldLayout:
     """지명 → 좌표. golden 지형점의 실좌표를 그대로 쓴다.
 

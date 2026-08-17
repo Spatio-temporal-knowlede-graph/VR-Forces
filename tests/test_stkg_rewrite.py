@@ -143,3 +143,60 @@ def test_sources_are_not_mixed_when_pairing(layout):
     out, links, _, _ = rewrite(rows, layout)
     assert not links
     assert all(r["object"] == "" for r in out if r["subject"] == "M933HE 1")
+
+
+def _row_20260809(subject, predicate, coord, obj="-",
+                  ts="2026-08-09T08:53:44.000Z", source="GROUND_TRUTH"):
+    """20260809판 17열. CID가 빠지고 상태 열 10개가 붙었다."""
+    lat, lon = coord
+    return {"subject": subject, "predicate": predicate, "object": obj,
+            "timestamp": ts, "latitude": f"{lat}", "longitude": f"{lon}",
+            "source": source, "force": "1", "tracking_id": "1:3001:5",
+            "uuid": subject, "entity_type": "3:1:225:1:41:1:0", "damage": "0",
+            "smoke": "false", "flaming": "false", "mobility_kill": "false",
+            "firepower_kill": "false", "suppression_level": "0"}
+
+
+def test_output_inherits_whatever_columns_the_export_gave(layout):
+    """열 목록을 못박지 않는다. 판마다 열이 다르고, 목록을 코드에 두면 새 열이
+    조용히 사라진다."""
+    rows = [_row_20260809("FRINF001", "None", _at(layout, "LOC_중앙킬존"))]
+    out, _, _, _ = rewrite(rows, layout)
+    assert list(out[0]) == list(rows[0])
+    assert out[0]["entity_type"] == "3:1:225:1:41:1:0"
+    assert out[0]["suppression_level"] == "0"
+
+
+def test_fire_weapon_keeps_the_target_the_export_supplied(layout):
+    """20260809판에서 유일하게 대상이 미리 채워져 오는 술어다(실측 GT 650행).
+    우리가 만든 값이 아니라 관측이므로 덮어쓰지 않는다."""
+    rows = [_row_20260809("FRINF041", "Fire Weapon",
+                          _at(layout, "LOC_중앙킬존"), obj="ENT72006")]
+    out, _, _, _ = rewrite(rows, layout)
+    assert out[0]["predicate"] == "Fire-Weapon"
+    assert out[0]["object"] == "ENT72006"
+
+
+def test_wait_duration_has_no_target(layout):
+    rows = [_row_20260809("FRINF001", "Wait-Duration Seconds-To-Wait:60",
+                          _at(layout, "LOC_중앙킬존"))]
+    out, _, _, tally = rewrite(rows, layout)
+    assert out[0]["predicate"] == "Wait-Duration"
+    assert out[0]["object"] == ""
+    assert not tally.unparsed          # 파싱 실패로 쌓이면 안 된다
+
+
+def test_waypoint_target_becomes_a_control_point_not_an_entity(layout):
+    """통제점은 지우지 않되 객체로 세지 않는다. 06의 객체명 대조가 05의
+    집계와 같은 답을 써야 한다."""
+    rows = [_row_20260809("FRINF027", 'Move-To Waypoint: "P10"',
+                          _at(layout, "LOC_중앙킬존")),
+            _row_20260809("P10", "None", _at(layout, "LOC_중앙킬존"))]
+    out, _, _, tally = rewrite(rows, layout)
+    assert out[0]["predicate"] == "move to"
+    assert out[0]["object"] == "P10"
+    assert tally.object_locations == {"P10"}
+    assert not tally.object_entities
+    assert tally.control_subjects == {"P10"}
+    assert tally.entities == 1                 # FRINF027만 객체다
+    assert tally.seen == 1

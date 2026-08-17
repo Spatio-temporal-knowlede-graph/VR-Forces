@@ -9,8 +9,8 @@ from vtmak.parser import PatternMap, parse_scenario
 from vtmak.ranges import WeaponRanges
 from vtmak.registry import ClassMap, build_registry
 from vtmak.roster import RosterPlan, filter_events, select_roster
-from vtmak.scnx.catalog import DisCatalog, TaskCatalog
-from vtmak.scnx.plan import balanced
+from vtmak.scnx.catalog import DisCatalog, TaskCatalog, TaskKinds
+from vtmak.scnx.plan import SKIP_MIN_RANGE, balanced
 from vtmak.scnx.spec import build_spec
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,13 +27,14 @@ def _build():
     reg = build_registry(res.events, cm, lay.static_ids())
     # 파이프라인과 같게 명부를 감축한다(02_parse_events.py와 동일).
     task_ids = {e.event_id for e in res.events
-                if pm.task_kind(e.template, e.action_label) not in ("", "noop")}
+                if pm.task_kind_of(e) not in ("", "noop")}
     keep = select_roster(res.events, reg, RosterPlan.load(cfg / "roster.json"),
                          task_ids)
     events = filter_events(res.events, keep)
     reg = {o: d for o, d in reg.items() if o in keep}
     return build_spec(events, reg, lay, pm,
                       TaskCatalog.load(cfg / "task_catalog.csv"),
+                      TaskKinds.load(cfg / "task_kinds.csv"),
                       DisCatalog.load(cfg / "dis_catalog.csv"),
                       WeaponRanges.load(cfg / "weapon_ranges.csv"),
                       scenario_id="battle")
@@ -88,7 +89,10 @@ def test_empty_plans_are_only_towed_equipment(spec):
     cls = {e.object_id: e.entity_class for e in spec.entities}
     empty = {cls[oid] for oid, steps in spec.entity_plans.items()
              if not any(s.pln for s in steps)}
-    assert empty == {"ZPU-4 AA Gun", "M901 Patriot Launcher"}, empty
+    # M901 Patriot Launcher는 더 이상 여기 없다 — aimAt이 noop이던 시절엔
+    # 이 모델의 유일한 이벤트가 aimAt이라 플랜이 통째로 비었다. Task 4에서
+    # aim이 방향 조준 Set을 내면서 빈 플랜에서 빠졌다.
+    assert empty == {"ZPU-4 AA Gun"}, empty
 
 
 def test_no_synthesised_plan_steps(spec):
@@ -117,9 +121,14 @@ def test_artillery_fires_at_a_location_not_an_entity(spec):
 
 
 def test_artillery_can_move(spec):
-    """포병도 진지변환 이동을 한다. task_catalog에 이동 템플릿을 추가했다."""
+    """포병도 진지변환 이동을 한다. task_catalog에 이동 템플릿을 추가했다.
+
+    원문의 포병 이동은 '방어선 재편성 이동'이라 통제점 이동(move-to)으로 간다.
+    좌표 이동이든 통제점 이동이든 '움직인다'가 계약이다.
+    """
     steps = [s for s in spec.entity_plans["FR-AHS-001"] if s.pln]
-    assert any("move-to-location-task" in s.pln for s in steps)
+    assert any("move-to-location-task" in s.pln or '"move-to"' in s.pln
+               for s in steps)
 
 
 def test_infantry_direct_fire_targets_an_entity(spec):
@@ -163,11 +172,32 @@ def test_assault_formation_move_follows_the_unit_leader(spec):
 
 
 def test_supply_move_sets_speed_first(spec):
+    """동반 행동은 task_kinds.csv의 선행_행동이 정한다(코드 특례가 아니다)."""
     for steps in spec.entity_plans.values():
         for i, s in enumerate(steps):
             if s.task_kind == "move_slow":
-                assert i > 0 and steps[i - 1].task_kind == "set_speed"
+                assert i > 0 and steps[i - 1].action_label == "속도 지정"
+                assert steps[i - 1].task_kind == "move_slow:속도 지정"
                 assert "(speed 8.000000)" in steps[i - 1].pln
+
+
+def test_watch_move_is_followed_by_a_direction_aiming_set(spec):
+    """'감시 위치 이동 및 관측 방향 유지'는 두 블록을 낸다.
+
+    이동만 저작하면 원문의 '관측 방향 유지'가 산출에서 사라진다. 이동 뒤에
+    목적지 방위로 방향 조준(aiming-type 2)을 건다.
+    """
+    seen = 0
+    for steps in spec.entity_plans.values():
+        for i, s in enumerate(steps):
+            if s.task_kind != "move_watch":
+                continue
+            seen += 1
+            nxt = steps[i + 1]
+            assert nxt.task_kind == "move_watch:방향 조준"
+            assert "(aiming-type 2)" in nxt.pln
+            assert "AZIMUTH_RAD" not in nxt.pln
+    assert seen, "move_watch task가 하나도 없다"
 
 
 def test_task_type_variety(spec):
@@ -179,30 +209,88 @@ def test_task_type_variety(spec):
                 m = re.search(r'task-type "([^"]+)"|'
                               r'set-data-request-type "([^"]+)"', s.pln)
                 kinds.add(m.group(1) or m.group(2))
-    # 확장 전에는 4종뿐이었다. move-to(통제점)를 좌표 이동으로 바꾸면서
-    # move-to-location-task로 합쳐져 7종이 되었다.
-    assert len(kinds) >= 7, sorted(kinds)
-    assert "move-to" not in kinds, "통제점 이동은 더 이상 저작하지 않는다"
+    # 확장 전에는 4종. 방어 배치 이동을 통제점 이동(move-to)으로 돌리면서
+    # move-to-location-task 한 종류가 전체의 45%를 먹던 편중이 풀렸다.
+    assert len(kinds) >= 8, sorted(kinds)
+    assert "move-to" in kinds, "방어 배치 이동은 통제점 이동으로 저작한다"
 
 
-def test_aim_produces_no_task(spec):
-    # 포신 정렬은 config에서 noop으로 선언했다(ffe가 조준까지 처리).
+def test_no_single_task_type_dominates(spec):
+    """한 task 종류가 전체의 3분의 1을 넘지 않는다.
+
+    STKG 관계가 하나로 쏠리면 롱테일이 생겨 학습·평가가 그 하나만 본다.
+    2026-08-09 이전에는 move-to-location-task가 436/974 = 45%였다.
+    """
+    import re
+    from collections import Counter
+    c = Counter()
     for steps in spec.entity_plans.values():
         for s in steps:
-            assert s.template != "aimAt" or s.pln is None
+            if s.pln:
+                m = re.search(r'task-type "([^"]+)"|'
+                              r'set-data-request-type "([^"]+)"', s.pln)
+                c[m.group(1) or m.group(2)] += 1
+    top, n = c.most_common(1)[0]
+    assert n / sum(c.values()) < 1 / 3, (top, n, sum(c.values()), c.most_common())
 
 
-def test_no_tactical_graphics_are_created(spec):
-    """통제점(= VR-Forces 전술 그래픽)을 하나도 만들지 않는다.
+def test_aim_becomes_a_direction_aiming_set(spec):
+    """'포신 정렬'은 원문이 서술한 행위다. 표적이 정적 지점이라 객체 조준
+    대신 방위·고각을 계산해 넣는 방향 조준(aiming-type 2)을 쓴다."""
+    aims = [s for steps in spec.entity_plans.values() for s in steps
+            if s.task_kind == "aim"]
+    assert aims, "aim task가 하나도 없다"
+    for s in aims:
+        assert s.template == "aimAt", s.template
+        if s.pln is None:
+            # 저작하지 않은 aim은 최소사거리 미달뿐이다. 그 외에 pln이 비면
+            # 템플릿·참조 결함이라 조용히 넘기면 안 된다.
+            assert s.skip_reason == SKIP_MIN_RANGE, (s.event_id, s.skip_reason)
+            assert s.issues, s.event_id
+            continue
+        assert '(set-data-request-type "set-aiming-point")' in s.pln
+        assert "(aiming-type 2)" in s.pln
+        assert "AZIMUTH_RAD" not in s.pln and "ELEVATION_RAD" not in s.pln
 
-    전술 그래픽이 시나리오 로딩을 느리게 해서, 모든 태스크가 통제점 uuid 대신
-    좌표를 직접 적는다(사용자 결정 2026-08-03). 통제점은 태스크가 참조할 때만
-    생기므로, 참조가 사라지면 개수도 0이 된다.
+
+def test_aim_angles_are_real_radians(spec):
+    """치환이 됐는지만이 아니라 값이 말이 되는지 본다."""
+    import math
+    import re
+    azimuths = []
+    for steps in spec.entity_plans.values():
+        for s in steps:
+            if s.task_kind != "aim" or s.pln is None:
+                continue
+            az = float(re.search(r"\(aiming-azimuth ([-\d.]+)\)", s.pln).group(1))
+            el = float(re.search(r"\(aiming-elevation ([-\d.]+)\)", s.pln).group(1))
+            assert 0.0 <= az < 2 * math.pi, az
+            assert -math.pi / 2 <= el <= math.pi / 2, el
+            azimuths.append(az)
+    assert azimuths, "검사한 aim task가 없다"
+    # 전부 0이면 사수·표적 좌표가 같은 자리로 풀린 것이다
+    assert any(az != 0.0 for az in azimuths)
+
+
+def test_no_tactical_graphics_leak_beyond_firing_prep(spec):
+    """통제점(= VR-Forces 전술 그래픽)은 find_firing_position 표적에만 쓰인다.
+
+    전술 그래픽이 시나리오 로딩을 느리게 해서, find_fp 이외의 모든 태스크는
+    통제점 uuid 대신 좌표를 직접 적는다(사용자 결정 2026-08-03). Task 5부터
+    find_fp의 위협(정적 지점)만 예외다 — 조준·사격 대상을 실제로 찍어야 해서
+    좌표만으로는 대체할 수 없다(2026-08-05). 2026-08-09부터 방어 배치 이동
+    (`move_cp`)이 하나 더 붙는다 — '지정된 방어 위치로 간다'는 서술이라
+    좌표가 아니라 통제점을 참조하고, 지도에 찍혀야 사람이 배치를 확인한다.
     """
-    assert spec.control_objects == []
+    ALLOWED = {"find_fp", "move_cp"}
+    ctl_uuids = {c.uuid for c in spec.control_objects}
     for oid, steps in spec.entity_plans.items():
         for s in steps:
+            if s.task_kind in ALLOWED:
+                continue
             assert "control-point" not in (s.pln or ""), f"{oid} {s.event_id}"
+            for ref in s.refs:
+                assert ref not in ctl_uuids, (oid, s.event_id, s.task_kind)
 
 
 def test_move_tasks_carry_real_coordinates(spec):
@@ -227,3 +315,112 @@ def test_spec_is_deterministic(spec):
            [(e.object_id, e.uuid, e.coord.as_tuple()) for e in other.entities]
     assert [(c.ref_id, c.uuid) for c in spec.control_objects] == \
            [(c.ref_id, c.uuid) for c in other.control_objects]
+
+
+def test_stop_and_stay_become_wait_tasks(spec):
+    """'정지한다'·'잔류한다'는 원문이 서술한 행위다. 버리지 않는다."""
+    waits = [(oid, s) for oid, steps in spec.entity_plans.items()
+             for s in steps if s.task_kind == "wait"]
+    assert waits, "wait task가 하나도 없다"
+    for _, s in waits:
+        assert s.template in ("stopAt", "stayAt"), s.template
+        assert s.pln is not None, s.event_id
+        assert '(task-type "wait-duration")' in s.pln
+        assert "(seconds-to-wait" in s.pln
+
+
+def test_wait_task_has_no_placeholder_left(spec):
+    """참조 대상이 없는 kind라 치환할 자리도 없어야 한다."""
+    for steps in spec.entity_plans.values():
+        for s in steps:
+            if s.task_kind != "wait":
+                continue
+            for tok in ("TARGET_UUID", "ENTITY_UUID", "CONTROL_POINT_UUID",
+                        "X Y Z", "SX SY SZ"):
+                assert tok not in s.pln, (s.event_id, tok)
+            assert s.refs == [], s.event_id
+
+
+def test_firing_prep_becomes_find_firing_position(spec):
+    """'사격 준비 대기 → 사격 준비'는 짝이 있는 전이지만 별개 행위로 남긴다.
+
+    stateChange 계열 1,294건 중 745건은 같은 시각 같은 객체에 이미 task를
+    내는 이벤트가 붙어 있어 중복이다(2026-08-05 재실측) — 이 전이는 그
+    규칙의 예외다. 같은 시각·같은 객체·같은 원문 줄의 aimAt과 21/21 전부
+    짝을 이루지만, 포신 정렬(aimAt → set-aiming-point)과 사격위치 확보(이
+    전이 → find_firing_position)는 같은 순간을 말하는 서로 다른 두 행위라
+    둘 다 task로 남긴다. 부작용: 조준이 재배치보다 먼저라 재배치 반경(100m)
+    안에서 조준각이 몇 도 어긋난다 — 받아들인 대가다.
+    """
+    preps = [s for steps in spec.entity_plans.values() for s in steps
+             if s.task_kind == "find_fp"]
+    assert preps, "find_fp task가 하나도 없다"
+    for s in preps:
+        assert s.template == "stateChange", s.template
+        assert s.pln is not None, s.event_id
+        assert '(task-type "find_firing_position")' in s.pln
+        assert "TARGET_UUID" not in s.pln, s.event_id
+        assert s.refs, s.event_id
+
+
+# 사격 준비 전이가 참조하는 정적 표적 7종(2026-08-05 실측).
+FIRE_PREP_LOCATIONS = {
+    "LOC_중앙킬존", "LOC_적포병진지", "LOC_적박격포진지", "LOC_적북측접근로",
+    "LOC_남측제1방어선", "LOC_아군포병진지", "LOC_아군박격포진지",
+}
+
+# 방어 배치 이동(move_cp)의 목적지. 원문의 '방어선 재편성 이동'·'방어 위치
+# 이동'이 가리키는 자리이고, 통제점으로 찍혀야 사람이 배치를 확인한다.
+DEFEND_LOCATIONS = {
+    "LOC_중앙킬존남측", "LOC_목표A남측", "LOC_중앙킬존",
+    "LOC_동측능선", "LOC_서측능선",
+}
+
+
+def test_find_firing_position_threat_is_a_control_point(spec):
+    """위협 대상이 정적 지점이라 통제점 uuid로 풀린다.
+
+    2026-08-03에 통제점을 뺀 것은 배치 지명 29개를 전부 찍어 로딩이 느려졌기
+    때문이다. 여기서 생기는 것은 실제로 조준·사격 대상이 되는 곳뿐이다.
+
+    개수를 못 박지 않는다. 이 테스트의 _build()는 roster.json으로 명부를
+    200객체로 줄이는데(파이프라인 02는 감축하지 않는다 — 328객체), 그래서
+    여기서 보이는 통제점은 전체의 부분집합이다. 못 박으면 roster.json을
+    건드릴 때마다 깨진다. 전체 목록은 04를 돌려 확인한다.
+    """
+    ctl = {c.uuid: c.ref_id for c in spec.control_objects}
+    assert ctl, "통제점이 하나도 없다"
+    for steps in spec.entity_plans.values():
+        for s in steps:
+            if s.task_kind != "find_fp":
+                continue
+            assert s.refs[0] in ctl, (s.event_id, s.refs)
+    # 통제점이 사격 준비 표적·방어 배치 목적지 말고 다른 데서 새면 여기서 잡힌다.
+    assert set(ctl.values()) <= FIRE_PREP_LOCATIONS | DEFEND_LOCATIONS, \
+        sorted(ctl.values())
+
+
+def test_no_task_objects_get_no_move_or_fire_after_that_line(spec):
+    """원문이 'task를 부여하지 않는다'고 적은 객체를 지키고 있는가.
+
+    2026-08-05 실측으로 그 시각 이후 이동·사격 이벤트가 0건이라 지금은
+    강제 로직이 없어도 지켜진다. 원문이 바뀌어 어긋나면 여기서 잡는다.
+    """
+    import json
+    from pathlib import Path
+    jsonl = Path(__file__).resolve().parents[1] / "build" / "events" / "battle.jsonl"
+    if not jsonl.exists():
+        pytest.skip("build/events/battle.jsonl 없음 — 02를 먼저 실행")
+    rows = [json.loads(l) for l in jsonl.read_text(encoding="utf-8").splitlines() if l]
+    cutoff = {}
+    for r in rows:
+        if r["template"] == "noTask":
+            cutoff.setdefault(r["actor"], r["time_s"])
+    assert cutoff, "noTask 이벤트가 하나도 없다 — 원문이 바뀐 것이다"
+    bad = [(oid, s.event_id, s.task_kind) for oid, steps in spec.entity_plans.items()
+           if oid in cutoff
+           for s in steps
+           if s.time_s > cutoff[oid]
+           and s.task_kind in ("move", "move_slow", "follow",
+                               "fire_direct", "fire_indirect", "suppress")]
+    assert bad == [], bad[:5]

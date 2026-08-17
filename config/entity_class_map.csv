@@ -14,14 +14,14 @@ BTR-60 APC,차량/장갑차 - M2HB 계열,M2HB Machine Gun,find_cover,엄폐 탐
 BTR-80 APC,차량/장갑차 - M2HB 계열,30mm Gun,,golden .oob display-name 실측. 이전 값 'M2HB Machine Gun'은 이 모델에 없다
 LAV III APC,차량/장갑차 - M2HB 계열,M2HB Machine Gun,,
 M113 APC,차량/장갑차 - M2HB 계열,M2HB Machine Gun,,
-ZPU-4 AA Gun,차량/장갑차 - M2HB 계열,M2HB Machine Gun,move-to-location-task,견인 대공포 — 이동 컨트롤러 없음. ENZPU001-003·FRZPU001-003 6/6 전원 Move to 실패
+ZPU-4 AA Gun,차량/장갑차 - M2HB 계열,M2HB Machine Gun,move-to-location-task;move-to,견인 대공포 — 이동 컨트롤러 없음. ENZPU001-003·FRZPU001-003 6/6 전원 Move to 실패; move-to는 실측이 아니라 추론이다 — move-to-location-task가 '컨트롤러 없음'으로 거절되는 모델은 이동 컨트롤러 자체가 없다는 뜻이라 통제점 이동도 같은 이유로 실패한다(견인 장비). 방어 배치 이동이 move-to로 가면서 막지 않으면 실행되지 않을 태스크가 저작된다. VR-Forces에서 확인되면 이 비고를 지운다
 GAZ-66 Truck,차량/장갑차 - M2HB 계열,,,비무장
 M35 Truck,차량/장갑차 - M2HB 계열,,,비무장
 M1028 FMTV Canvas Cargo Truck,차량/장갑차 - M2HB 계열,,,비무장
 M1083A1 FMTV Flatbed Truck,차량/장갑차 - M2HB 계열,,,비무장
-MO-120RT-61 Mortar,포병 - 박격포(m9333he 계열),Indirect-Fire-Gun:m9333he,move-to-location-task,견인 박격포 — 이동 컨트롤러 없음. ENMORT 4/5·FRMORT 4/4 Move to 실패
+MO-120RT-61 Mortar,포병 - 박격포(m9333he 계열),Indirect-Fire-Gun:m9333he,move-to-location-task;move-to,견인 박격포 — 이동 컨트롤러 없음. ENMORT 4/5·FRMORT 4/4 Move to 실패; move-to는 실측이 아니라 추론이다 — move-to-location-task가 '컨트롤러 없음'으로 거절되는 모델은 이동 컨트롤러 자체가 없다는 뜻이라 통제점 이동도 같은 이유로 실패한다(견인 장비). 방어 배치 이동이 move-to로 가면서 막지 않으면 실행되지 않을 태스크가 저작된다. VR-Forces에서 확인되면 이 비고를 지운다
 M109 Howitzer,포병 - 155mm 자주포,Indirect-Fire-Gun:M107-155mm,,
 AHS Krab Howitzer,포병 - 155mm 자주포,Indirect-Fire-Gun:M107-155mm,,
 CAESAR SP Howitzer,포병 - 155mm 자주포,Indirect-Fire-Gun:M107-155mm,,
-M901 Patriot Launcher,미사일 발사대 - Patriot,Patriot Missile Launcher,move-to-location-task;ffe-on-location,"golden .oob 실측. type_group은 태스크 템플릿을 고르는 키다 — 전용 그룹을 둬야 이동·간접사격을 다 받는다. 차량 그룹에 넣으면 다른 차량까지 간접사격 템플릿을 갖고, 미분류면 이동조차 못 한다. 지상 간접사격 성립 여부(설계 스펙 §8.3)는 weapon_ranges.csv의 unverified=1이 계속 붙잡는다. / 견인 발사대 — 이동 컨트롤러 없고 간접사격 포도 없음. FRM901001이 Move to·FFE-On-Location 둘 다 실패"
+M901 Patriot Launcher,미사일 발사대 - Patriot,Patriot Missile Launcher,move-to-location-task;ffe-on-location;move-to,"golden .oob 실측. type_group은 태스크 템플릿을 고르는 키다 — 전용 그룹을 둬야 이동·간접사격을 다 받는다. 차량 그룹에 넣으면 다른 차량까지 간접사격 템플릿을 갖고, 미분류면 이동조차 못 한다. 지상 간접사격 성립 여부(설계 스펙 §8.3)는 weapon_ranges.csv의 unverified=1이 계속 붙잡는다. / 견인 발사대 — 이동 컨트롤러 없고 간접사격 포도 없음. FRM901001이 Move to·FFE-On-Location 둘 다 실패; move-to는 실측이 아니라 추론이다 — move-to-location-task가 '컨트롤러 없음'으로 거절되는 모델은 이동 컨트롤러 자체가 없다는 뜻이라 통제점 이동도 같은 이유로 실패한다(견인 장비). 방어 배치 이동이 move-to로 가면서 막지 않으면 실행되지 않을 태스크가 저작된다. VR-Forces에서 확인되면 이 비고를 지운다"
 MIM-104 Patriot Launcher,미사일 발사대 - Patriot,Patriot Missile Launcher,ffe-on-location,"golden .oob 실측. type_group은 태스크 템플릿을 고르는 키다 — 전용 그룹을 둬야 이동·간접사격을 다 받는다. 차량 그룹에 넣으면 다른 차량까지 간접사격 템플릿을 갖고, 미분류면 이동조차 못 한다. 지상 간접사격 성립 여부(설계 스펙 §8.3)는 weapon_ranges.csv의 unverified=1이 계속 붙잡는다. / 간접사격 포 없음. ENMIM001 FFE-On-Location 실패(이동은 정상이라 move는 막지 않는다)"

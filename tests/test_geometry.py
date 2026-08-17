@@ -142,3 +142,45 @@ def test_deterministic(layout):
     a = [layout.coord(i).as_tuple() for i in layout.location_ids()]
     b = [layout.coord(i).as_tuple() for i in layout.location_ids()]
     assert a == b
+
+
+import math
+
+from vtmak.geometry import Coord, bearing_elevation
+
+
+def test_bearing_is_zero_due_north_and_grows_clockwise():
+    here = Coord(21.39, -157.74, 0.0)
+    north = Coord(21.40, -157.74, 0.0)
+    east = Coord(21.39, -157.73, 0.0)
+    south = Coord(21.38, -157.74, 0.0)
+
+    assert bearing_elevation(here, north)[0] == pytest.approx(0.0, abs=1e-3)
+    assert bearing_elevation(here, east)[0] == pytest.approx(math.pi / 2,
+                                                             abs=1e-3)
+    assert bearing_elevation(here, south)[0] == pytest.approx(math.pi,
+                                                              abs=1e-3)
+
+
+def test_bearing_stays_in_zero_to_two_pi():
+    here = Coord(21.39, -157.74, 0.0)
+    west = Coord(21.39, -157.75, 0.0)
+    az, _ = bearing_elevation(here, west)
+    assert 0.0 <= az < 2 * math.pi
+    assert az == pytest.approx(3 * math.pi / 2, abs=1e-3)
+
+
+def test_elevation_is_positive_when_target_is_higher():
+    low = Coord(21.39, -157.74, 0.0)
+    high = Coord(21.39, -157.74, 100.0)
+    far_high = Coord(21.40, -157.74, 100.0)
+
+    assert bearing_elevation(low, high)[1] > 0
+    assert bearing_elevation(high, low)[1] < 0
+    # 멀수록 같은 고도차의 고각은 작아진다
+    assert bearing_elevation(low, far_high)[1] < bearing_elevation(low, high)[1]
+
+
+def test_same_point_is_flat_and_north():
+    p = Coord(21.39, -157.74, 50.0)
+    assert bearing_elevation(p, p) == (0.0, 0.0)

@@ -1,0 +1,20 @@
+task_kind,ref_kind,참조_필드,사거리_종류,행동_후보,선행_행동,후행_행동,비고
+move,COORD,dst,,좌표로 이동|통제점으로 이동,,,
+move,ENTITY,dst,,좌표로 이동|통제점으로 이동,,,
+move_cp,COORD,dst,,통제점으로 이동|좌표로 이동,,,"방어 배치 이동 — 지정된 방어 위치로 간다. 원문의 '방어선 재편성 이동'·'방어 위치 이동' 둘 다 좌표가 아니라 자리를 가리키는 서술이라 move-to(통제점)가 맞고, 지도에 통제점이 찍혀 사람이 방어 배치를 눈으로 확인할 수 있다. 부수 효과로 move-to-location-task 한 종류가 전체 task의 45%를 먹던 편중이 풀린다"
+move_cp,ENTITY,dst,,통제점으로 이동|좌표로 이동,,,
+move_slow,COORD,dst,,좌표로 이동|통제점으로 이동,속도 지정,,저속 보급 기동 — 선행_행동이 set-speed를 앞에 붙인다
+move_watch,COORD,dst,,좌표로 이동|통제점으로 이동,,방향 조준,"감시 위치 이동 및 관측 방향 유지 — 원문이 '관측 방향 유지'를 말하므로 이동 뒤에 그 방향으로 조준을 건다. 방위는 출발 지점에서 목적지를 볼 때의 값이라, 도착한 뒤에는 진행 방향을 계속 보게 된다"
+move_watch,ENTITY,dst,,좌표로 이동|통제점으로 이동,,방향 조준,
+fire_direct,ENTITY,target,direct,대상 직접사격|대상 자동무장 사격,,,
+fire_direct,COORD,target,direct,대상 직접사격,,,
+fire_indirect,COORD,target,indirect,좌표 대상 간접사격,,,
+fire_indirect,ENTITY,target,indirect,Entity 대상 간접사격|좌표 대상 간접사격,,,
+aim,ENTITY,target,indirect,객체 조준,,,
+aim,COORD,target,indirect,방향 조준,,,
+suppress,ENTITY,target,direct,제압사격,,,표적 좌표만 필요(uuid 불필요)
+suppress,COORD,target,direct,제압사격,,,
+take_cover,ENTITY,source_obj,,피격 후 엄폐,,,Threat = 피격 원천 객체
+wait,*,,,대기,,,참조 대상 없음 — 정지·잔류 표현
+follow,ENTITY,unit_leader,,대형 추종 이동,,,부대 선두를 추종
+find_fp,COORD,next_fire_target,,사격위치 탐색,,,"후속 사격 문장의 표적을 위협으로 쓴다. 사거리 검사 안 함 — 사격이 아니라 위치 탐색이다. ENTITY 변형은 없다 — 표적이 살아있는 엔티티가 되면 kinds.get(""find_fp"",""ENTITY"")가 None을 돌려줘 템플릿 없음으로 G3 C3.5가 BLOCK한다(의도된 하드 스톱, 조용히 빠지지 않는다). 참조_필드는 시간 상한 없이 앞으로 스캔한다 — 지금은 전부 같은 원문 줄에서 잡히지만 먼 미래의 사격 이벤트가 표적으로 잘못 묶일 수 있다(시간창은 의도적으로 범위 밖 — 여기서 넣지 않는다)"

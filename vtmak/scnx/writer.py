@@ -16,7 +16,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Protocol
 
-from ..geometry import Coord
+from ..geometry import Coord, tait_bryan
 from .golden import Golden
 from .spec import ControlObjectSpec, EntitySpec, ScnxSpec
 
@@ -58,7 +58,8 @@ def _spec_to_dict(spec: ScnxSpec) -> dict:
         # raw는 20KB짜리 원본 레코드라 검토용 JSON에는 넣지 않는다.
         "fixed_objects": [
             {"marking": f.marking, "label": f.label, "uuid": f.uuid,
-             "dis": list(f.dis), "coord": _coord(f.coord)}
+             "dis": list(f.dis), "coord": _coord(f.coord),
+             "plan": spec.fixed_plans.get(f.marking, [])}
             for f in spec.fixed_objects],
     }
 
@@ -124,6 +125,34 @@ _RE_UUID_VAL = re.compile(r'\(uuid\s+"VRF_UUID:([^"]*)"')
 _RE_PARENT_VAL = re.compile(r'\(parent-name\s+(?:"VRF_UUID:([^"]*)"|(\S+?))\s*\)')
 _RE_POS = re.compile(
     r"\(position\s+-?\d[\d.eE+-]*\s+-?\d[\d.eE+-]*\s+-?\d[\d.eE+-]*\)")
+# 자세. 복제한 공여체의 값을 그대로 두면 전원이 같은 쪽을 본다 — 2026-08-09
+# 실측에서 343객체 전부 heading 0°(진북)였고, 아군·적군이 같은 방향을 보고
+# 서 있었다. reference-orientation은 move-along 프로세스가 쓰는 기준 자세라
+# 같이 맞춘다.
+_RE_ORIENT = re.compile(
+    r"\(orientation-tait-bryan\s+-?\d[\d.eE+-]*\s+-?\d[\d.eE+-]*"
+    r"\s+-?\d[\d.eE+-]*\)")
+_RE_REF_ORIENT = re.compile(
+    r"\(reference-orientation\s+-?\d[\d.eE+-]*\s+-?\d[\d.eE+-]*"
+    r"\s+-?\d[\d.eE+-]*\)")
+# state-data의 AI 스위치. golden·campaign 레코드는 True로 저장돼 있다.
+_RE_AI = re.compile(r"\(DtRwBoolean\s+AIEnabled\s+\w+((?:\s+publish)?)\)")
+
+# 저작 시 모든 객체의 AI를 끈다(사용자 결정 2026-08-04, 2026-08-05 자동화).
+# 매뉴얼 34.3대로 충돌회피·자동사격·피격반응만 꺼지고 task는 그대로 돈다
+# (실측: 328객체 중 294객체가 AI Off로 오류 없이 수행). 켜 두면 계획에 없는
+# 교전이 일어나 시나리오가 일찍 끝난다 — 그래서 기본값이 False다.
+AI_ENABLED_DEFAULT = False
+
+
+def _ai_switch(oob: str, enabled: bool) -> str:
+    """.oob 안의 AIEnabled를 전부 원하는 값으로 맞춘다.
+
+    스위치가 없는 객체에는 만들어 넣지 않는다. 통제점·라우트에는 state-data가
+    없고, 거기에 AI 스위치를 넣으면 golden에 없는 형태가 된다.
+    """
+    return _RE_AI.sub(
+        rf"(DtRwBoolean AIEnabled {'True' if enabled else 'False'}\1)", oob)
 
 
 def _fmt_ecef(c: Coord) -> str:
@@ -161,9 +190,11 @@ def _check_org_tree(oob: str) -> None:
 
 class TemplateScnxWriter:
     def __init__(self, golden_path: str = "yewon_test.scnx",
-                 emit_plans: bool = True) -> None:
+                 emit_plans: bool = True,
+                 ai_enabled: bool = AI_ENABLED_DEFAULT) -> None:
         self.golden = Golden.load(golden_path)
         self.emit_plans = emit_plans
+        self.ai_enabled = ai_enabled
         self._plat = self.golden.template_for("1")   # 차량/장비
         self._life = self.golden.template_for("3")   # 보병
         self._point = self.golden.template_for("16")  # 점
@@ -201,6 +232,12 @@ class TemplateScnxWriter:
             f'(parent-name  "VRF_UUID:{_FORCE_ROOT[force]}")', r, count=1)
         r = _RE_SUBFL.sub("(subordinate-of-force-level True)", r, count=1)
         r = _RE_POS.sub(f"(position  {_fmt_ecef(e.coord)})", r)
+        # 방위는 ECEF 기준 오일러각이라 위경도마다 값이 다르다 — 좌표를 바꾼
+        # 다음에 계산해야 맞는다. 피치·롤은 0으로 둔다(Ground Clamping이
+        # 지면 경사를 잡는다).
+        tb = " ".join(f"{v:.6f}" for v in tait_bryan(e.coord, e.heading))
+        r = _RE_ORIENT.sub(f"(orientation-tait-bryan  {tb})", r)
+        r = _RE_REF_ORIENT.sub(f"(reference-orientation  {tb})", r)
         return r
 
     def _control_record(self, c: ControlObjectSpec, oid: str, mark: str) -> str:
@@ -230,16 +267,28 @@ class TemplateScnxWriter:
             parts.append("  " + self._control_record(c, f"1:3001:{n}", f"P{k}"))
             n += 1
         for f in spec.fixed_objects:
-            # 원본 시나리오의 레코드를 그대로 쓴다. object-identifier만
-            # 이 .oob 안에서 유일하도록 다시 매긴다 — marking·uuid·좌표를
-            # 건드리면 '항상 고정'이 깨진다.
+            # 원본 시나리오의 레코드를 쓴다. object-identifier만 이 .oob 안에서
+            # 유일하도록 다시 매긴다. 좌표·고도·짐벌은 fixed.load_fixed가 이미
+            # config 값으로 치환해 뒀다 — 여기서는 더 손대지 않는다.
             parts.append("  " + _RE_OID.sub(
                 f'(object-identifier  "1:3001:{n}"', f.raw, count=1))
             n += 1
         parts.append(")\n")
-        oob = "\n".join(parts)
+        # AI 스위치는 마지막에 한 번에 맞춘다 — 엔티티·통제점·고정 객체 중
+        # 어느 경로로 들어온 레코드든 빠짐없이 같은 값이 되게.
+        oob = _ai_switch("\n".join(parts), self.ai_enabled)
         _check_org_tree(oob)
         return oob
+
+    @staticmethod
+    def _plan(uuid: str, blocks: list[str]) -> str:
+        body = "\n".join("         " + b for b in blocks)
+        return ("(Plan \n      (pending-triggers )\n      (triggers )\n"
+                f'      (plan-name  "VRF_UUID:{uuid}")\n'
+                "      (quick-launch-flags 4)\n      (ordinal 1)\n"
+                f"{_PLAN_VARS}"
+                f"      (Block \n{body}\n      )\n"
+                "      (plan-execution-stack \n      )\n   )")
 
     def _pln(self, spec: ScnxSpec) -> str:
         out = ['(', '   (Plan-File (version "2.0"))']
@@ -251,14 +300,14 @@ class TemplateScnxWriter:
                       if s.pln]
             if not blocks:
                 continue
-            body = "\n".join("         " + b for b in blocks)
-            out.append(
-                "(Plan \n      (pending-triggers )\n      (triggers )\n"
-                f'      (plan-name  "VRF_UUID:{e.uuid}")\n'
-                "      (quick-launch-flags 4)\n      (ordinal 1)\n"
-                f"{_PLAN_VARS}"
-                f"      (Block \n{body}\n      )\n"
-                "      (plan-execution-stack \n      )\n   )")
+            out.append(self._plan(e.uuid, blocks))
+        # 고정 객체 플랜. 붙는 행동은 task_catalog에 있는 것만이고, Plan 요소는
+        # spec.FIXED_PLAN_ELEMENTS가 거른다(UAV는 Set + 선회 감시 Task).
+        for f in spec.fixed_objects:
+            blocks = list(spec.fixed_plans.get(f.marking, ()))
+            if not blocks:
+                continue
+            out.append(self._plan(f.uuid, blocks))
         out.append(")\n")
         return "\n".join(out)
 

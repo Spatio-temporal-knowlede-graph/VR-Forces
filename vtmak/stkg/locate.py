@@ -14,7 +14,29 @@
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
+
+_RE_LOC = re.compile(r"^LOC_")
+
+# 통제점. 시나리오 원문에 없고 전투 객체도 아니다 — 태스크가 가리키는
+# **자리**다. `Move-To Waypoint: "P10"`의 대상으로 나오고, 시뮬레이터에서는
+# 스스로 위치 행도 낸다(실측 20260809 ground_truth: P1~P11이 각 3,025행).
+# 객체로 세면 원문에 없는 이름 11개가 산출물마다 따라다닌다.
+_RE_CONTROL = re.compile(r"^(?:P\d+|Waypoint \d+)$")
+
+
+def is_place(name: str) -> bool:
+    """이름이 객체가 아니라 자리인가 — 지명(`LOC_…`)이나 통제점(`P10`).
+
+    05(집계)와 06(대조)이 같은 답을 써야 한다. 한쪽만 통제점을 객체로 세면
+    '원문에 없는 객체 11개'가 평가에 유령으로 남는다.
+    """
+    return bool(_RE_LOC.match(name) or _RE_CONTROL.match(name))
+
+
+def is_control_point(name: str) -> bool:
+    return bool(_RE_CONTROL.match(name))
 
 
 @dataclass(frozen=True)

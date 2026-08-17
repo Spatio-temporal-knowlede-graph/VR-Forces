@@ -88,3 +88,93 @@ class DisCatalog:
 
     def known(self, entity_class: str) -> bool:
         return norm(entity_class) in self._dis
+
+
+@dataclass(frozen=True)
+class TaskKind:
+    task_kind: str
+    ref_kind: str            # COORD | ENTITY | * (무관)
+    ref_field: str           # Event의 필드 이름. 빈 값 = 참조 대상 없음
+    fire_kind: str           # direct | indirect | 빈 값(사거리 검사 안 함)
+    labels: tuple[str, ...]  # task_catalog '행동' 이름, 우선순위 순
+    note: str
+    # 이 task 앞뒤에 같이 붙는 행동(task_catalog '행동' 이름). 저속 보급 기동의
+    # set-speed, 감시 이동의 방향 조준처럼 '한 문장이 두 블록을 낸다'는 사실을
+    # 코드가 아니라 표에 둔다.
+    pre_labels: tuple[str, ...] = ()
+    post_labels: tuple[str, ...] = ()
+
+
+class TaskKinds:
+    """task_kind → 참조 필드 · 사거리 종류 · 행동 후보.
+
+    예전에는 plan.py에 LABEL_CANDIDATES·REF_FIELD·FIRE_KIND 세 개의 dict로
+    박혀 있었다. 그래서 매핑 하나를 늘리려면 CSV 두 장과 코드 세 곳을 같이
+    고쳐야 했고, task_catalog에 템플릿이 있는 행동 33종 중 8종만 도달 가능했다.
+
+    참조_필드와 사거리_종류는 task_kind 하나에 하나뿐이다(ref_kind별로 갈리지
+    않는다). 여러 행에 다르게 적혀 있으면 어느 쪽이 맞는지 알 수 없으므로
+    로드 시점에 예외로 세운다.
+    """
+
+    def __init__(self) -> None:
+        self._by_key: dict[tuple[str, str], TaskKind] = {}
+        self._ref: dict[str, str] = {}
+        self._fire: dict[str, str] = {}
+        self._pre: dict[str, tuple[str, ...]] = {}
+        self._post: dict[str, tuple[str, ...]] = {}
+
+    @classmethod
+    def load(cls, path) -> "TaskKinds":
+        k = cls()
+        for r in _rows(Path(path)):
+            kind = r["task_kind"].strip()
+            if not kind:
+                continue
+            split = lambda s: tuple(  # noqa: E731
+                x.strip() for x in (s or "").split("|") if x.strip())
+            t = TaskKind(
+                kind,
+                r["ref_kind"].strip() or "*",
+                r["참조_필드"].strip(),
+                r["사거리_종류"].strip(),
+                split(r["행동_후보"]),
+                (r.get("비고") or "").strip(),
+                split(r.get("선행_행동")),
+                split(r.get("후행_행동")),
+            )
+            for field, store in (("참조_필드", (t.ref_field, k._ref)),
+                                 ("사거리_종류", (t.fire_kind, k._fire)),
+                                 ("선행_행동", (t.pre_labels, k._pre)),
+                                 ("후행_행동", (t.post_labels, k._post))):
+                value, table = store
+                if kind in table and table[kind] != value:
+                    raise ValueError(
+                        f"task_kinds.csv: {kind}의 {field}가 행마다 다르다 "
+                        f"({table[kind]!r} vs {value!r})")
+                table[kind] = value
+            k._by_key[(kind, t.ref_kind)] = t
+        return k
+
+    def pre_labels(self, task_kind: str) -> tuple[str, ...]:
+        return self._pre.get(task_kind, ())
+
+    def post_labels(self, task_kind: str) -> tuple[str, ...]:
+        return self._post.get(task_kind, ())
+
+    def known(self, task_kind: str) -> bool:
+        return task_kind in self._ref
+
+    def get(self, task_kind: str, ref_kind: str) -> TaskKind | None:
+        return (self._by_key.get((task_kind, ref_kind))
+                or self._by_key.get((task_kind, "*")))
+
+    def ref_field(self, task_kind: str) -> str:
+        if task_kind not in self._ref:
+            raise KeyError(f"task_kinds.csv에 없는 task_kind: {task_kind}")
+        return self._ref[task_kind]
+
+    def fire_kind(self, task_kind: str) -> str:
+        if task_kind not in self._fire:
+            raise KeyError(f"task_kinds.csv에 없는 task_kind: {task_kind}")
+        return self._fire[task_kind]

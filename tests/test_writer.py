@@ -11,7 +11,7 @@ from vtmak.parser import PatternMap, parse_scenario
 from vtmak.ranges import WeaponRanges
 from vtmak.registry import UNCLASSIFIED, ClassMap, build_registry
 from vtmak.roster import RosterPlan, filter_events, select_roster
-from vtmak.scnx.catalog import DisCatalog, TaskCatalog
+from vtmak.scnx.catalog import DisCatalog, TaskCatalog, TaskKinds
 from vtmak.scnx.gates import check_g3, weapons_in
 from vtmak.scnx.golden import Golden
 from vtmak.scnx.plan import SKIP_UNSUPPORTED, PlanStep
@@ -34,14 +34,15 @@ def built():
     cm = ClassMap.load(cfg / "entity_class_map.csv")
     reg = build_registry(res.events, cm, lay.static_ids())
     task_ids = {e.event_id for e in res.events
-                if pm.task_kind(e.template, e.action_label) not in ("", "noop")}
+                if pm.task_kind_of(e) not in ("", "noop")}
     keep = select_roster(res.events, reg, RosterPlan.load(cfg / "roster.json"),
                          task_ids)
     events = filter_events(res.events, keep)
     reg = {o: d for o, d in reg.items() if o in keep}
     dis = DisCatalog.load(cfg / "dis_catalog.csv")
     spec = build_spec(events, reg, lay, pm,
-                      TaskCatalog.load(cfg / "task_catalog.csv"), dis,
+                      TaskCatalog.load(cfg / "task_catalog.csv"),
+                      TaskKinds.load(cfg / "task_kinds.csv"), dis,
                       WeaponRanges.load(cfg / "weapon_ranges.csv"), "battle")
     return spec, dis
 
@@ -165,6 +166,36 @@ def test_pln_blocks_are_balanced_and_reference_entities(written, built):
         assert name in uuids
 
 
+def test_every_object_is_written_with_ai_off(written):
+    """AI를 켜 두면 계획에 없는 교전이 나서 시나리오가 일찍 끝난다.
+
+    golden 레코드는 AIEnabled True로 저장돼 있어서, 예전에는 VR-Forces에서
+    손으로 328개를 껐다. 저작 단계에서 끈다(2026-08-05).
+    """
+    with zipfile.ZipFile(written) as z:
+        oob = z.read(f"{written.stem}.oob").decode("utf-8", "replace")
+    assert "AIEnabled True" not in oob
+    assert oob.count("AIEnabled False") > 0
+
+
+def test_ai_switch_only_touches_objects_that_have_one(built, tmp_path):
+    """통제점처럼 state-data가 없는 객체에 스위치를 만들어 넣지 않는다."""
+    spec, _ = built
+    on = get_writer_oob(spec, tmp_path / "on", ai_enabled=True)
+    off = get_writer_oob(spec, tmp_path / "off", ai_enabled=False)
+    assert on.count("AIEnabled") == off.count("AIEnabled")
+    assert on.count("AIEnabled True") == off.count("AIEnabled False")
+    assert "AIEnabled False" not in on
+
+
+def get_writer_oob(spec, out_dir, *, ai_enabled: bool) -> str:
+    from vtmak.scnx.writer import TemplateScnxWriter
+    out = TemplateScnxWriter(str(GOLDEN), ai_enabled=ai_enabled).write(
+        spec, out_dir)
+    with zipfile.ZipFile(out) as z:
+        return z.read(f"{out.stem}.oob").decode("utf-8", "replace")
+
+
 def test_scn_points_at_the_terrain_and_new_stem(written):
     with zipfile.ZipFile(written) as z:
         scn = z.read(f"{written.stem}.scn").decode("utf-8", "replace")
@@ -221,3 +252,10 @@ def test_ak47_infantry_fires_with_ak47(built):
              for w in weapons_in(st.pln or "")]
     assert fired, "적 보병에게 사격 태스크가 하나도 없다"
     assert set(fired) == {"AK-47"}, set(fired)
+
+
+def test_mapping_tables_stay_out_of_the_code():
+    """매핑 표가 코드로 돌아오면 config/task_kinds.csv가 정본이 아니게 된다."""
+    src = (ROOT / "vtmak" / "scnx" / "plan.py").read_text(encoding="utf-8")
+    for name in ("LABEL_CANDIDATES", "REF_FIELD", "FIRE_KIND"):
+        assert f"{name}:" not in src and f"{name} =" not in src, name

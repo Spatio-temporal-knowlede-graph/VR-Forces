@@ -66,3 +66,24 @@ def test_unknown_predicate_returns_none():
 
 def test_empty_string_returns_none():
     assert parse("") is None
+
+
+def test_fire_weapon_says_the_object_is_in_the_object_column():
+    """20260809판에서 새로 나온 직사 술어. 표적이 문자열에 없다 — 내보내기가
+    object 열에 미리 채워 준다(실측 ground_truth 650행)."""
+    p = parse("Fire Weapon")
+    assert p == Parsed("fires_weapon_at", None, "given")
+
+
+def test_wait_duration_is_a_relationless_task():
+    """대기는 대상이 없다. 파싱 실패로 쌓이면 report만 어지럽힌다."""
+    p = parse("Wait-Duration Seconds-To-Wait:60")
+    assert p == Parsed("waits", None, "none")
+
+
+def test_find_firing_position_yields_the_threat():
+    """실측 Threat는 통제점으로도 온다(Threat=P10). 여기서 가리지 않는다."""
+    raw = ("find_firing_position: DistanceFromThreat=2; Range=100; "
+           "Threat=P10; ThreatRadius=2;")
+    assert parse(raw) == Parsed("takes_firing_position_against", "P10",
+                                "entity")

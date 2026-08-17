@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from vtmak.geometry import BattlefieldLayout
-from vtmak.stkg.locate import Snap, snap
+from vtmak.stkg.locate import Snap, is_control_point, is_place, snap
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -62,3 +62,21 @@ def test_real_destination_from_measured_data_resolves(layout):
     result = snap((-5499123.141030, -2250320.406046, 2311025.754248), layout)
     assert result.object_type == "location"
     assert result.distance_m < 1.0
+
+
+@pytest.mark.parametrize("name", ["LOC_중앙킬존", "P1", "P11", "Waypoint 1"])
+def test_place_names_are_not_objects(name):
+    """05의 집계와 06의 대조가 같은 답을 써야 한다. 한쪽만 통제점을 객체로
+    세면 '원문에 없는 객체 11개'가 평가에 유령으로 남는다."""
+    assert is_place(name)
+
+
+@pytest.mark.parametrize("name", ["ENINF001", "FRM113007", "M933HE 1",
+                                  "PLOC_X", "Waypoint"])
+def test_object_names_are_not_places(name):
+    assert not is_place(name)
+
+
+def test_control_point_is_distinguished_from_a_place_name():
+    assert is_control_point("P10")
+    assert not is_control_point("LOC_중앙킬존")

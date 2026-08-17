@@ -20,8 +20,11 @@ E3(원문 지명이 layout·CSV에 모두 있는가)은 뺐다. 지명은 `move 
 GT annotated가 200 MB급이라 CSV는 전부 스트리밍으로 읽는다. 행을 리스트에
 담지 않는다.
 
+도장은 `20260804`처럼 날짜만 있기도 하고 `20260809_175237`처럼 시각까지
+붙기도 한다. 같은 날 두 번 돌린 것을 구분하려고 내보내기가 시각을 붙였다.
+
   python scripts/06_evaluate_dataset.py
-  python scripts/06_evaluate_dataset.py --stamp 20260804
+  python scripts/06_evaluate_dataset.py --stamp 20260809_175237
 """
 from __future__ import annotations
 
@@ -46,7 +49,9 @@ from vtmak.paths import SCENARIO                                  # noqa: E402
 from vtmak.registry import ClassMap, build_registry               # noqa: E402
 from vtmak.stkg.filter import classify, Disposition               # noqa: E402
 from vtmak.stkg.firing import is_munition                         # noqa: E402
+from vtmak.stkg.locate import is_control_point, is_place          # noqa: E402
 from vtmak.stkg.rewrite import _is_coord                          # noqa: E402
+from vtmak.stkg.schema import standardize                         # noqa: E402
 
 CONFIG = ROOT / "config"
 CSV_DIR = ROOT / "build" / "csv"
@@ -54,14 +59,19 @@ STKG_DIR = ROOT / "build" / "stkg"
 
 GT_SOURCE = "ground_truth"
 
+# 도장은 날짜만(20260804) 또는 날짜_시각(20260809_175237)이다.
+_STAMP = r"\d{8}(?:_\d{6})?"
+
 # 대상이 반드시 있어야 하는 술어. 비어 있으면 E7 위반이다.
 PRED_NEEDS_OBJECT = {"move to", "Follow-Entity", "FFE-on-Location",
-                     "find_cover"}
+                     "Fire-Weapon", "find_cover", "find_firing_position"}
 # 대상이 반드시 비어야 하는 술어.
-PRED_NEEDS_EMPTY = {"none"}
+PRED_NEEDS_EMPTY = {"none", "Wait-Duration"}
 # 확정했을 때만 채운다. 비어도 위반이 아니다(rewrite.py 참조).
 PRED_OPTIONAL = {"fired_by"}
 
+# 지명·통제점 판정은 vtmak.stkg.locate가 한다 — 05가 집계에 쓰는 것과 같은
+# 규칙이라야 한다.
 _RE_LOC = re.compile(r"^LOC_")
 
 
@@ -142,8 +152,9 @@ class Scan:
         self.raw_rows = 0
         self.raw_dropped_by_rule = 0     # filter.classify가 KEEP이 아닌 행
         self.out_rows = 0
-        self.subjects: set[str] = set()          # 발사체 제외 주체
+        self.subjects: set[str] = set()          # 발사체·통제점 제외 주체
         self.munitions: set[str] = set()
+        self.controls: set[str] = set()          # 주체로 나온 통제점
         self.object_entities: set[str] = set()   # 대상으로만 나온 이름
         self.object_locations: set[str] = set()
         self.object_coords: set[str] = set()     # 지명에 못 붙은 좌표 폴백
@@ -156,12 +167,14 @@ class Scan:
     def read_raw(self, path: Path) -> None:
         with open(path, encoding="utf-8", newline="") as fh:
             reader = csv.DictReader(fh)
-            # 05가 읽는 표준 이름으로 맞춘다. 내보내기 판마다 열 이름이 다르다.
+            # 05와 **같은** 규칙으로 표준 이름을 맞춘다(vtmak.stkg.schema).
+            # 여기서 따로 어림짐작하면 판이 바뀔 때 05와 06이 다른 열을 주체로
+            # 읽는다 — 20260809판은 object 열이 전 행 '-'라 실제로 그랬다.
             for row in reader:
                 self.raw_rows += 1
-                subject = row.get("object") or row.get("subject") or ""
-                stamp = row.get("timestamp") or ""
-                if classify(subject, stamp) is not Disposition.KEEP:
+                row = standardize(row)
+                if classify(row.get("subject") or "",
+                            row.get("timestamp") or "") is not Disposition.KEEP:
                     self.raw_dropped_by_rule += 1
 
     def read_annotated(self, path: Path) -> None:
@@ -174,12 +187,14 @@ class Scan:
                 self.predicates[pred] += 1
                 if is_munition(subject):
                     self.munitions.add(subject)
+                elif is_control_point(subject):
+                    self.controls.add(subject)
                 else:
                     self.subjects.add(subject)
                     if pred not in PRED_NEEDS_EMPTY:
                         self.changed.add(subject)
                 if obj:
-                    if _RE_LOC.match(obj):
+                    if is_place(obj):
                         self.object_locations.add(obj)
                     elif _is_coord(obj):
                         # locate.snap이 지명에 못 붙인 좌표다. 객체가 아니라
@@ -205,8 +220,8 @@ class Scan:
 
 
 def _source_of(path: Path) -> str:
-    """'UAV 2_20260804_dataset.csv' → 'UAV 2'."""
-    return re.sub(r"_\d{8}_(dataset|annotated)$", "", path.stem)
+    """'UAV 2_20260809_175237_dataset.csv' → 'UAV 2'."""
+    return re.sub(rf"_{_STAMP}_(dataset|annotated)$", "", path.stem)
 
 
 def scan_all(stamp: str) -> dict[str, Scan]:
@@ -248,6 +263,12 @@ def e1_names(ref: Reference, scans: dict[str, Scan]) -> Check:
     c.note(f"  참고 발사체 {len(muni)}종은 원문 객체가 아니다: {_sample(muni)}")
     c.note(f"  참고 정적 객체 {len(ref.static)}개는 .scnx에 안 들어간다: "
            f"{_sample(ref.static)}")
+    ctrl: set[str] = set()
+    for s in scans.values():
+        ctrl |= s.controls
+    if ctrl:
+        c.note(f"  참고 통제점 {len(ctrl)}개는 객체가 아니라 자리다: "
+               f"{_sample(ctrl)}")
     coords: set[str] = set()
     for s in scans.values():
         coords |= s.object_coords
@@ -373,7 +394,7 @@ def main() -> int:
     stamp = args.stamp
     if not stamp:
         stamps = sorted({m.group(1) for p in CSV_DIR.glob("*_dataset.csv")
-                         if (m := re.search(r"_(\d{8})_dataset$", p.stem))})
+                         if (m := re.search(rf"_({_STAMP})_dataset$", p.stem))})
         if not stamps:
             raise SystemExit(f"입력 CSV 없음: {CSV_DIR}")
         stamp = stamps[-1]

@@ -1,7 +1,34 @@
 {
   "source_dir": "campaign",
   "markings": ["UAV 1", "UAV 2", "UAV 3", "UAV 4"],
-  "note": "원문이 서술하지 않지만 모든 시나리오에 같은 자리로 들어가야 하는 객체. campaign 시나리오에서 레코드를 원문 그대로 복제한다 — 좌표·DIS·force·uuid를 전부 그대로 쓰므로 '항상 고정'이다. 플랜은 붙이지 않는다(campaign에는 UAV 비행 플랜이 있지만 여기서는 정지 상태로 둔다).",
+  "patrol_centers": {
+    "UAV 1": "LOC_적포병진지",
+    "UAV 2": "LOC_아군포병진지",
+    "UAV 3": "LOC_적북측접근로",
+    "UAV 4": "LOC_중앙킬존"
+  },
+  "patrol": {
+    "route_donor": { "source_dir": "battle", "marking": "Route 1" },
+    "radius_m": 1000.0,
+    "vertices": 16,
+    "start_bearing_deg": 0.0,
+    "altitude_agl_m": 400.0,
+    "laps": 8
+  },
+  "gimbal": {
+    "aiming_mode": 0,
+    "azimuth_rad": -1.570796,
+    "scanning_left": false
+  },
+  "plan": {
+    "type_group": "무인기 - 짐벌 센서",
+    "actions": ["관측 보고 켜기", "순찰 비행"]
+  },
+  "patrol_centers_note": "2026-08-06 실측으로 고른 자리. UAV 1 적포병진지 = fired_by 78%(2,303행)의 최대밀집 격자에서 14m, UAV 2 아군포병진지 = FFE-on-Location 69%(1,500행)에서 22m, UAV 3 적북측접근로 = Follow-Entity 56%(40,788행) + find_cover 100%에서 4m. UAV 4 중앙킬존은 광역 보완이다. 관측반경 750m 가정에서 주체 326/345, 1,250m에서 345/345.",
+  "patrol_note": "순찰로는 중심 둘레 반경 radius_m의 정 vertices각형이고 반시계로 돈다. 정점의 z는 지면 기준 비행고도(altitude_agl_m)다. laps는 move-along Task를 몇 번 붙일지다 — 한 바퀴 약 6.2km이고 시나리오가 약 13분이라 8바퀴면 남는다(모자라면 UAV가 마지막 정점에 서 버린다). route_donor는 라우트 레코드를 복제해 올 곳이다: golden(yewon_test)에는 라우트 템플릿이 아예 없어서(kind 17 레코드 0개) 실제로 저작된 시나리오에서 가져와야 한다. battle/의 Route 1은 사람이 GUI로 그려 돌려 본 것이라 구조가 검증돼 있다.",
+  "gimbal_note": "aiming_elevation은 여기 적지 않는다. -atan(patrol.altitude_agl_m / patrol.radius_m)으로 계산하므로 고도나 반경을 고치면 각도가 따라온다(기본값에서 -0.380506 rad = -21.80°). 이전 값 -1.396263(-80°)은 지면 위 70m대에서 거의 수직 아래를 보게 해 관측이 시간의 4~13%에서만 일어나던 원인이었다. azimuth_rad -1.570796(-90°)은 기체 좌현이고, 순찰로가 반시계라 이때 안쪽을 본다. 필드명은 campaign.oob·battle.oob의 sensor-gimbal-controller PSR에서 직접 읽어 확인했다.",
+  "plan_note": "고정 객체에 붙는 Plan 요소. Set과 Task를 모두 허용한다(spec.FIXED_PLAN_ELEMENTS). S-expression은 task_catalog.csv의 (type_group, 행동) 행에 있다.",
+  "note": "원문이 서술하지 않지만 모든 시나리오에 같은 배치로 들어가야 하는 객체. campaign에서 UAV 레코드를, battle에서 라우트 레코드를 복제한 뒤 좌표·고도·짐벌·정점만 이 파일이 정한 값으로 치환한다 — DIS·force·탑재 시스템은 원문 그대로라 인스턴스화 위험이 없다. '고정'의 뜻은 '움직이지 않는다'가 아니라 '원문 규모와 무관하게 같은 배치를 갖는다'이다. load_fixed는 UAV 4개와 순찰로 4개를 함께 돌려준다(순찰로는 plan_actions가 비어 플랜이 안 붙는다).",
   "terrain_note": "campaign.scn과 battle.scn이 같은 Ala Moana를 쓰므로 ECEF 좌표가 그대로 통한다. 지형이 다른 시나리오에서 가져오면 좌표가 엉뚱한 곳에 떨어진다.",
-  "measured": "2026-08-03 실측 — UAV 1(21.3995, -157.7363, 73m) 아군박격포진지 936m, UAV 2(21.3969, -157.7352, 76m) 아군박격포진지 674m, UAV 3(21.3809, -157.7552, 109m) 남측고지관측소 187m, UAV 4(21.3840, -157.7557, 99m) 남측고지관측소 206m. 넷 다 force=ForceNeutral."
+  "measured": "2026-08-06 실측 — orbit_object(campaign.pln에서 수확)로 저작했더니 VR-Forces에서 UAV가 전혀 움직이지 않았다. 그 Task의 target은 데이터 타입이 simulationobject인데 우리는 통제점 uuid를 넣었다. battle/battle.pln의 move-along + Route로 바꿨다. 종전 배치는 UAV 1(21.3995, -157.7363, 73m), UAV 2(21.3969, -157.7352, 76m), UAV 3(21.3809, -157.7552, 109m), UAV 4(21.3840, -157.7557, 99m)로 4대가 두 곳에 300m·350m 간격으로 뭉쳐 있었다."
 }
