@@ -331,3 +331,16 @@ def test_omp_lists_every_object_with_units(scnx_with_units, omp_with_units,
                               + len(spec_with_orbat.units)
                               + len(spec_with_orbat.control_objects)
                               + len(spec_with_orbat.fixed_objects))
+
+
+def test_unit_records_leave_formation_name_blank(scnx_with_units,
+                                                  spec_with_orbat):
+    """골든 부대 레코드 7개(대대·중대 2·소대 4) 전수 확인 결과 formation-name이
+    전부 빈 문자열이었다 — 대형 카탈로그 조회 값으로 보여 저작 시 채우면 안
+    된다. 부대명은 object-label에 있으니 이 필드는 골든 값 그대로 둔다.
+    """
+    recs = _balanced_records(scnx_with_units, "(aggregate ")
+    assert len(recs) == len(spec_with_orbat.units)
+    for r in recs:
+        m = re.search(r'\(formation-name\s+"([^"]*)"', r)
+        assert m and m.group(1) == "", r[:200]

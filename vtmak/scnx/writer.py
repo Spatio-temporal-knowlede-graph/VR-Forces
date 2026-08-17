@@ -137,9 +137,6 @@ _RE_REF_ORIENT = re.compile(
     r"\s+-?\d[\d.eE+-]*\)")
 # state-data의 AI 스위치. golden·campaign 레코드는 True로 저장돼 있다.
 _RE_AI = re.compile(r"\(DtRwBoolean\s+AIEnabled\s+\w+((?:\s+publish)?)\)")
-# 부대 레코드(aggregate)의 부대명. formation-name도 object-label처럼 부대
-# 표시명으로 쓴다 — golden에서는 빈 문자열("")이었다.
-_RE_FORMATION_NAME = re.compile(r'\(formation-name "[^"]*"')
 
 # 저작 시 모든 객체의 AI를 끈다(사용자 결정 2026-08-04, 2026-08-05 자동화).
 # 매뉴얼 34.3대로 충돌회피·자동사격·피격반응만 꺼지고 task는 그대로 돈다
@@ -218,6 +215,11 @@ class TemplateScnxWriter:
         제대는 DIS 타입이 아니라 트리로 구분된다(실측: 대대·중대·소대가 전부
         object-type 3 (11 1 0 0 34 0 11)). 대대만 force 루트에 걸고
         subordinate-of-force-level True를 준다 — 골든이 그렇게 되어 있다.
+
+        formation-name은 건드리지 않는다 — 골든 부대 레코드 7개(대대·중대
+        2·소대 4)를 전수 확인한 결과 전부 빈 문자열이었다. VR-Forces 대형
+        카탈로그를 조회하는 값으로 보여 임의 문자열을 넣으면 로드 시 조회
+        실패 위험이 있다. 부대명은 이미 object-label 치환으로 표시된다.
         """
         if self._agg is None:
             raise ValueError("골든에 aggregate 템플릿이 없다")
@@ -228,7 +230,6 @@ class TemplateScnxWriter:
         r = _RE_LABEL.sub(f'(object-label "{u.name}"', r, count=1)
         r = _RE_UUID.sub(f'(uuid  "VRF_UUID:{u.uuid}"', r, count=1)
         r = _RE_FORCE.sub(f"(force {force})", r)
-        r = _RE_FORMATION_NAME.sub(f'(formation-name "{u.name}"', r, count=1)
         if u.parent_uuid:
             r = _RE_PARENT.sub(f'(parent-name  "VRF_UUID:{u.parent_uuid}")',
                                r, count=1)
