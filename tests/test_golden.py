@@ -28,6 +28,11 @@ def dis():
     return DisCatalog.load(ROOT / "config" / "dis_catalog.csv")
 
 
+@pytest.fixture(scope="module")
+def golden():
+    return Golden.load(GOLDEN)
+
+
 def test_id_allocator_is_deterministic():
     a = IdAllocator("battle")
     b = IdAllocator("battle")
@@ -85,3 +90,33 @@ def test_object_ids_fit_the_dis_marking_limit():
     marks = [i.replace("-", "") for i in ids]
     assert all(len(m) <= 11 and m.isascii() for m in marks)
     assert len(set(marks)) == len(marks)
+
+
+def test_aggregate_templates_are_found(golden):
+    """골든에 대대·중대·소대 레코드가 7개 있다(2026-08-17 갱신분)."""
+    aggs = golden.aggregate_templates()
+    assert len(aggs) == 7
+    for a in aggs:
+        assert a.kind == "aggregate"
+        assert a.uuid
+        assert "(aggregate-state Disaggregated)" in a.raw
+
+
+def test_aggregate_header_match_excludes_hyphenated_fields(golden):
+    """`(aggregate`는 레코드 안쪽의 `(aggregate-state`·`(aggregate-resolution-...`
+    필드에도 부분열로 매치된다. 헤더 탐색이 공백까지 포함해 좁혀졌는지,
+    그래서 그 필드들이 별도 레코드로 잘려 들어오지 않는지 직접 확인한다."""
+    aggs = golden.aggregate_templates()
+    for a in aggs:
+        assert a.raw.startswith("(aggregate ")
+        assert not a.raw.startswith("(aggregate-state")
+        assert not a.raw.startswith("(aggregate-resolution")
+        assert a.uuid
+        assert 'marking-text "' in a.raw
+
+
+def test_aggregate_is_not_mistaken_for_an_entity(golden):
+    """aggregate의 object-type 첫 값이 3(보병과 같다). 엔티티 템플릿으로
+    새어 들어가면 보병 대신 부대 껍데기가 복제된다."""
+    for o in golden.objects:
+        assert o.kind != "aggregate"

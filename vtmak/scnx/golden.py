@@ -20,6 +20,7 @@ KIND_LIFEFORM = "3"   # 보병 엔티티
 KIND_POINT = "16"     # 점(control-point/waypoint)
 KIND_ROUTE = "17"     # 라우트
 KIND_AREA = "18"      # 지역
+KIND_AGGREGATE = "aggregate"   # (aggregate ...) 레코드. object-type이 아니다
 
 ENTITY_KINDS = {KIND_PLATFORM, KIND_LIFEFORM}
 
@@ -42,6 +43,7 @@ class GoldenObject:
 class Golden:
     files: dict[str, bytes] = field(default_factory=dict)  # 내부파일명→원본
     objects: list[GoldenObject] = field(default_factory=list)
+    aggregates: list[GoldenObject] = field(default_factory=list)
 
     @classmethod
     def load(cls, scnx_path) -> "Golden":
@@ -51,6 +53,7 @@ class Golden:
                 g.files[n] = z.read(n)
         oob = _text(g.files.get(_ext(g.files, ".oob"), b""))
         g.objects = _parse_objects(oob)
+        g.aggregates = _parse_aggregates(oob)
         return g
 
     def weapons_of(self, dis: tuple[int, ...]) -> set[str]:
@@ -81,6 +84,12 @@ class Golden:
         """해당 부류의 대표 레코드(슬롯 템플릿). 가장 작은 것을 고른다."""
         cands = [o for o in self.objects if o.kind == kind]
         return min(cands, key=lambda o: len(o.raw)) if cands else None
+
+    def aggregate_templates(self) -> list[GoldenObject]:
+        """부대 레코드. 제대는 DIS 타입이 아니라 트리로만 구분되므로
+        (실측: 대대·중대·소대가 전부 object-type 3 (11 1 0 0 34 0 11))
+        어느 것을 써도 같다. 짧은 것부터 준다."""
+        return sorted(self.aggregates, key=lambda o: len(o.raw))
 
     def entity_by_dis(self, dis: tuple[int, ...]) -> GoldenObject | None:
         """정확히 같은 DIS(모델)의 실제 엔티티 레코드. 모델별 시스템·부품이
@@ -127,6 +136,38 @@ def _parse_objects(oob: str) -> list[GoldenObject]:
             kind=kind, dis=dis, marking=mark.group(1) if mark else "",
             uuid=uuid.group(1) if uuid else "",
             position=position, raw=raw))
+    return out
+
+
+def _parse_aggregates(oob: str) -> list[GoldenObject]:
+    """`(aggregate ...)` 레코드. `_parse_objects`는 `(local-vrf-object`만 읽어
+    이걸 못 본다. object-type 첫 값이 3이라 보병 템플릿으로 새면 안 된다.
+
+    헤더는 반드시 뒤에 공백을 붙인 `"(aggregate "`로 찾는다. `_balanced_records`는
+    단순 부분열 탐색(`str.find`)이라 공백 없이 `"(aggregate"`만 쓰면 각 부대
+    레코드 안쪽의 `(aggregate-state ...)`, `(aggregate-resolution-...)` 필드에도
+    접두어로 매치된다. 지금은 그 두 필드가 항상 진짜 부대 레코드 안쪽에 있어
+    `find(head, j+1)`이 레코드 끝을 지나 재탐색하면서 우연히 걸러지지만, 이는
+    위치 운이지 파서가 보장하는 성질이 아니다. 골든이 바뀌어 `aggregate-`로
+    시작하는 필드가 부대 레코드 밖(예: 엔티티 레코드)에 나타나면 그 조각이
+    통째로 템플릿으로 잘려 들어온다. 실제 레코드 헤더는 `(aggregate \n      (vrf-entity ...`
+    형태라 공백이 항상 붙으므로, 공백 포함 매칭이 하이픈 필드를 안전하게 배제한다."""
+    out: list[GoldenObject] = []
+    for raw in _balanced_records(oob, "(aggregate "):
+        ot = _OT_RE.search(raw)
+        if not ot:
+            continue
+        dis = tuple(int(x) for x in ot.group(1).split())
+        uuid = _UUID_RE.search(raw)
+        mark = _MARK_RE.search(raw)
+        pos = _POS_RE.search(raw)
+        out.append(GoldenObject(
+            kind=KIND_AGGREGATE, dis=dis,
+            marking=mark.group(1) if mark else "",
+            uuid=uuid.group(1) if uuid else "",
+            position=((float(pos.group(1)), float(pos.group(2)),
+                       float(pos.group(3))) if pos else None),
+            raw=raw))
     return out
 
 
