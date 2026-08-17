@@ -50,6 +50,9 @@ def main() -> int:
     ap.add_argument("--out", default=str(ROOT / "build" / "stkg"))
     ap.add_argument("--oob", default="",
                     help="CSV와 짝이 되는 .oob. 없으면 uuid를 해석하지 않는다")
+    ap.add_argument("--control-points", default=str(
+        ROOT / "build" / "timetable" / "battle_control_points.csv"),
+        help="04가 낸 통제점 대조표. 없으면 통제점 이름을 그대로 둔다")
     args = ap.parse_args()
 
     pattern = f"*_{args.stamp}_dataset.csv" if args.stamp else "*_dataset.csv"
@@ -64,6 +67,15 @@ def main() -> int:
     uuid_map = load_uuid_map(args.oob) if args.oob else {}
     if not uuid_map:
         print("  uuid 표 없음 — uuid 대상은 원문을 유지한다(--oob로 줄 것)")
+
+    place_names: dict[str, str] = {}
+    cp = Path(args.control_points)
+    if cp.exists():
+        with open(cp, encoding="utf-8-sig", newline="") as fh:
+            place_names = {r["code"]: r["loc_id"] for r in csv.DictReader(fh)}
+        print(f"  통제점 대조표 {len(place_names)}행")
+    else:
+        print(f"  통제점 대조표 없음({cp.name}) — 통제점 이름을 그대로 둔다")
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -87,7 +99,8 @@ def main() -> int:
             failed = True
             continue
 
-        out_rows, links, unresolved, tally = rewrite(rows, layout, uuid_map)
+        out_rows, links, unresolved, tally = rewrite(
+            rows, layout, uuid_map, place_names=place_names)
 
         ok = (tally.total == len(rows)
               and tally.out == len(out_rows)

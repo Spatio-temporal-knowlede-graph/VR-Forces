@@ -143,13 +143,15 @@ def _snap_object(blob: str, layout, control_points) -> str:
     return snap((x, y, z), layout, control_points=control_points).object_id
 
 
-def rewrite(rows, layout, uuid_map=None, control_points=None):
+def rewrite(rows, layout, uuid_map=None, control_points=None,
+            place_names=None):
     """입력 행 목록 → 8열 출력 행 목록.
 
     인프라 행이 빠지므로 len(out) < len(rows)다. 얼마나 빠졌는지는
     Tally.dropped에 담기고, 호출부가 total == out + dropped를 확인한다.
     """
     uuid_map = uuid_map or {}
+    place_names = place_names or {}
     tally = Tally()
     cols = out_columns(rows)
 
@@ -180,7 +182,8 @@ def rewrite(rows, layout, uuid_map=None, control_points=None):
     for row in kept:
         rec = {c: row.get(c, "") for c in cols}
         rec["predicate"], rec["object"] = _fields(row, layout, uuid_map,
-                                                  control_points, links, tally)
+                                                  control_points, place_names,
+                                                  links, tally)
         if rec["object"]:
             tally.with_object += 1
             if is_place(rec["object"]):
@@ -202,7 +205,7 @@ def rewrite(rows, layout, uuid_map=None, control_points=None):
     return out, links, unresolved, tally
 
 
-def _fields(row, layout, uuid_map, control_points, links, tally):
+def _fields(row, layout, uuid_map, control_points, place_names, links, tally):
     """행 하나의 (predicate, object)를 정한다."""
     subject = row["subject"]
 
@@ -234,6 +237,12 @@ def _fields(row, layout, uuid_map, control_points, links, tally):
     if p.object_kind == "coord":
         return name, _snap_object(p.object_raw, layout, control_points)
     if p.object_kind == "uuid":
+        # 통제점은 uuid가 아니라 marking으로 나온다(실측 `Move-To Waypoint:
+        # "P3"`). 대조표가 정본이고, 없으면 .oob marking 표로, 그것도 없으면
+        # 원문을 남긴다 — 버리면 그 행이 어디로 갔는지 알 수 없다.
+        place = place_names.get(p.object_raw)
+        if place:
+            return name, place
         marking = to_marking(p.object_raw, uuid_map)
         return name, marking if marking else p.object_raw
     return name, p.object_raw or EMPTY

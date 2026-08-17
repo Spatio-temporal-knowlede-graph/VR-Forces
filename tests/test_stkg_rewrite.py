@@ -14,6 +14,12 @@ def layout():
     return BattlefieldLayout.load(ROOT / "config" / "battlefield_layout.json")
 
 
+def _layout():
+    from vtmak.geometry import BattlefieldLayout
+    return BattlefieldLayout.load(
+        Path(__file__).resolve().parents[1] / "config" / "battlefield_layout.json")
+
+
 def _row(subject, predicate, coord, ts="2026-08-03T08:09:12.000Z",
          source="GROUND_TRUTH"):
     lat, lon = coord
@@ -200,3 +206,40 @@ def test_waypoint_target_becomes_a_control_point_not_an_entity(layout):
     assert tally.control_subjects == {"P10"}
     assert tally.entities == 1                 # FRINF027만 객체다
     assert tally.seen == 1
+
+
+def test_control_point_name_becomes_place_name():
+    """`Move-To Waypoint: "C_VALLEY"`가 지명으로 돌아온다.
+
+    시뮬레이터는 uuid가 아니라 marking을 그대로 내보낸다(실측
+    `Move-To Waypoint: "P3"`). 대조표가 없으면 그 이름이 산출물에 남는다.
+    """
+    rows = [{"subject": "FRINF001", "predicate": 'Move-To Waypoint: "C_VALLEY"',
+             "object": "-", "latitude": "21.38", "longitude": "-157.74",
+             "timestamp": "2026-08-09T08:53:44.000Z", "source": "UAV 1"}]
+    out, _, _, _ = rewrite(rows, _layout(), place_names={"C_VALLEY": "LOC_중앙계곡"})
+    assert (out[0]["predicate"], out[0]["object"]) == ("move to", "LOC_중앙계곡")
+
+
+def test_unknown_control_point_name_survives():
+    """표에 없는 이름은 버리지 않고 원문을 남긴다 — 옛 판 CSV가 그렇다."""
+    rows = [{"subject": "FRINF001", "predicate": 'Move-To Waypoint: "P3"',
+             "object": "-", "latitude": "21.38", "longitude": "-157.74",
+             "timestamp": "2026-08-09T08:53:44.000Z", "source": "UAV 1"}]
+    out, _, _, _ = rewrite(rows, _layout(), place_names={"C_VALLEY": "LOC_중앙계곡"})
+    assert out[0]["object"] == "P3"
+
+
+def test_no_bare_control_point_numbers_survive():
+    """산출 CSV에 P\\d+ 형태 object가 남으면 지명화가 반쪽이다.
+
+    대조표가 있는 실행에서만 의미가 있다 — 없으면 원문을 남기는 것이 옳다.
+    """
+    import re
+    rows = [{"subject": "FRINF001", "predicate": f'Move-To Waypoint: "{c}"',
+             "object": "-", "latitude": "21.38", "longitude": "-157.74",
+             "timestamp": "2026-08-09T08:53:44.000Z", "source": "UAV 1"}
+            for c in ("C_VALLEY", "S_DEF1")]
+    names = {"C_VALLEY": "LOC_중앙계곡", "S_DEF1": "LOC_남측제1방어선"}
+    out, _, _, _ = rewrite(rows, _layout(), place_names=names)
+    assert not [r for r in out if re.fullmatch(r"P\d+", r["object"])]

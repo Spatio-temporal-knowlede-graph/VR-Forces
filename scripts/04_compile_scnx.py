@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import sys
 from pathlib import Path
@@ -82,6 +83,20 @@ def main() -> int:
     place_codes = PlaceCodes.load(CFG / "location_codes.csv")
     out = get_writer(args.writer, str(golden_path),
                       place_codes=place_codes).write(spec, OUT)
+
+    # 통제점 대조표 — uuid를 배정하는 이 코드가 표도 같이 낸다. 05가 이 표로
+    # CSV의 marking(`P{k}`/코드)을 지명으로 되돌린다.
+    cp_path = ROOT / "build" / "timetable" / "battle_control_points.csv"
+    cp_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(cp_path, "w", encoding="utf-8", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["code", "loc_id", "uuid", "lat", "lon"])
+        for c in spec.control_objects:
+            w.writerow([place_codes.code(c.ref_id), c.ref_id, c.uuid,
+                        f"{c.coord.lat:.7f}" if c.coord else "",
+                        f"{c.coord.lon:.7f}" if c.coord else ""])
+    print(f"통제점 대조표 {len(spec.control_objects)}행 → {cp_path.name}")
+
     planned = sum(1 for v in spec.entity_plans.values()
                   if any(s.pln for s in v))
     tasks = sum(1 for v in spec.entity_plans.values() for s in v if s.pln)
