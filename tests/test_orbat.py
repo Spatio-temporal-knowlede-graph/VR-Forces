@@ -47,6 +47,21 @@ def test_every_taskable_entity_has_a_platoon(orbat, registry):
     assert missing == []
 
 
+def test_membership_is_a_partition(orbat, registry):
+    """누락만이 아니라 중복도 본다.
+
+    Orbat.__init__의 self._of[oid] = u.unit_id는 한 객체가 두 소대의
+    members에 들어가도 조용히 뒤에 나온 쪽으로 덮어쓴다 — 중복 배정
+    버그가 생겨도 platoon_of()가 None을 돌려주지 않으니 위 테스트만으로는
+    못 잡는다. 그래서 (구성원 합계 == 고유 구성원 수 == taskable 수)를
+    직접 확인하고, 정적 객체가 섞여 들어오지 않았는지도 함께 본다.
+    """
+    taskable = {o for o, d in registry.items() if d.taskable}
+    members = [oid for u in orbat.units() for oid in u.members]
+    assert len(members) == len(set(members)) == len(taskable)
+    assert set(members) == taskable
+
+
 def test_chain_closes_at_battalion(orbat):
     """소대 → (중대) → 대대. 깊이는 2단과 3단이 섞인다."""
     for u in orbat.units():
@@ -55,6 +70,20 @@ def test_chain_closes_at_battalion(orbat):
         chain = orbat.chain(u.unit_id)
         assert orbat.get(chain[-1]).echelon == "대대", u.unit_id
         assert len(chain) in (2, 3), (u.unit_id, chain)
+
+
+def test_parent_appears_before_child(orbat):
+    """units()가 부모를 먼저 낸다 — 이 순서 그대로 .oob 부대를 저작한다.
+
+    이 저장소의 알려진 실패 모드가 정확히 "parent-name이 안 닫히면
+    VR-Forces가 무한 로딩한다"이므로(vrforces-infinite-load-parent-name),
+    저작 순서에서 자식이 부모를 앞지르면 안 된다.
+    """
+    seen: set[str] = set()
+    for u in orbat.units():
+        if u.parent:
+            assert u.parent in seen, (u.unit_id, u.parent)
+        seen.add(u.unit_id)
 
 
 def test_markings_fit_dis(orbat):
@@ -80,7 +109,26 @@ def test_unknown_role_is_loud(registry):
 
 
 def test_task_organization_targets_exist(orbat):
+    pairs = orbat.supports() + orbat.reinforces()
+    # 쌍이 비어 있으면 아래 루프가 0회 돌아 공허하게 통과한다 — 지원관계가
+    # 통째로 사라져도 이 테스트가 초록으로 보이는 사고를 먼저 막는다.
+    assert pairs
     ids = {u.unit_id for u in orbat.units()}
-    for a, b in orbat.supports() + orbat.reinforces():
+    for a, b in pairs:
         assert a in ids, a
         assert b in ids, b
+
+
+def test_orbat_config_requires_supports_and_reinforces(tmp_path):
+    """supports/reinforces는 .get(key, [])가 아니라 필수 키다.
+
+    키가 orbat.json에서 빠지면(오타·리팩터) 빈 튜플로 조용히 넘어가지
+    않고 여기서 시끄럽게 죽어야 한다 — 그래야 test_task_organization_
+    targets_exist의 공허한 통과를 근본에서 막는다.
+    """
+    raw = json.loads((CFG / "orbat.json").read_text(encoding="utf-8"))
+    del raw["supports"]
+    p = tmp_path / "orbat_missing_supports.json"
+    p.write_text(json.dumps(raw, ensure_ascii=False), encoding="utf-8")
+    with pytest.raises(KeyError):
+        OrbatConfig.load(p)

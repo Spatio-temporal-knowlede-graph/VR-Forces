@@ -21,6 +21,13 @@ ECHELON_PL = "소대"
 ECHELON_CO = "중대"
 ECHELON_BN = "대대"
 
+# units()의 정렬 순위. 대대 → 중대 → 소대 순으로, 자식의 parent는 항상 이
+# 순위에서 자기보다 앞서는 제대다(소대의 parent는 중대나 대대, 중대의
+# parent는 대대). 그래서 이 순위로 정렬하면 "부모가 먼저 나온다"가
+# 구조적으로 보장된다 — unit_id 사전식 정렬만으로는 안 된다
+# ('UNIT-EN-AD-PL1' < 'UNIT-EN-BN'이라 소대가 대대보다 먼저 나온다).
+_ECHELON_RANK = {ECHELON_BN: 0, ECHELON_CO: 1, ECHELON_PL: 2}
+
 _ROLE_INDEX = re.compile(r"\s*\d+$")
 
 
@@ -60,6 +67,14 @@ class OrbatConfig:
     def load(cls, path) -> "OrbatConfig":
         d = json.loads(Path(path).read_text(encoding="utf-8"))
         doc, sim = d["doctrine"], d["simulation_abstraction"]
+        # supports/reinforces는 .get(key, [])로 읽지 않는다. 키가 오타나거나
+        # 리팩터로 빠지면 빈 리스트가 되어 build_orbat이 조용히 지원관계
+        # 0건을 낳고, test_task_organization_targets_exist는 루프가 0회
+        # 돌아 공허하게 통과한다 — 지원관계가 통째로 사라져도 테스트가
+        # 초록으로 보이는 것이다. 그래서 필수 키로 취급해 시끄럽게 죽는다.
+        for key in ("supports", "reinforces"):
+            if key not in d:
+                raise KeyError(f"{path}: orbat.json에 필수 키 {key!r}가 없다")
         return cls(
             platoons_per_company=int(doc["platoons_per_company"]),
             apply_split_to=set(doc["apply_split_to"]),
@@ -72,8 +87,8 @@ class OrbatConfig:
             faction_code=dict(d["faction_code"]),
             faction_name=dict(d["faction_name"]),
             battalion_name=dict(d["battalion_name"]),
-            supports=tuple(tuple(p) for p in d.get("supports", [])),
-            reinforces=tuple(tuple(p) for p in d.get("reinforces", [])),
+            supports=tuple(tuple(p) for p in d["supports"]),
+            reinforces=tuple(tuple(p) for p in d["reinforces"]),
         )
 
     def function(self, role: str) -> str:
@@ -102,7 +117,18 @@ class Orbat:
         self._reinforces = tuple(reinforces)
 
     def units(self) -> list[Unit]:
-        return [self._u[k] for k in sorted(self._u)]
+        """(제대 순위, unit_id) 순. 부모가 항상 자식보다 먼저 나온다.
+
+        unit_id 사전식 정렬만 쓰면 'UNIT-EN-AD-PL1'이 'UNIT-EN-BN'보다
+        앞서는 것처럼 자식이 부모를 앞지르는 경우가 생긴다(67개 중 9개).
+        다음 태스크들이 이 순서 그대로 .oob에 부대를 저작하는데, 이
+        저장소의 알려진 실패 모드가 정확히 "parent-name이 안 닫히면
+        VR-Forces가 무한 로딩한다"이다. 제대 순위(대대<중대<소대)로
+        정렬하면 부모-먼저가 구조적으로 보장된다 — 소대의 parent는 항상
+        중대나 대대, 중대의 parent는 항상 대대이기 때문이다.
+        """
+        return [self._u[k] for k in
+               sorted(self._u, key=lambda k: (_ECHELON_RANK[self._u[k].echelon], k))]
 
     def get(self, unit_id: str) -> Unit:
         if unit_id not in self._u:
