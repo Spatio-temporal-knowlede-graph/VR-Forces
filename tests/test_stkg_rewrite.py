@@ -194,7 +194,10 @@ def test_wait_duration_has_no_target(layout):
 
 def test_waypoint_target_becomes_a_control_point_not_an_entity(layout):
     """통제점은 지우지 않되 객체로 세지 않는다. 06의 객체명 대조가 05의
-    집계와 같은 답을 써야 한다."""
+    집계와 같은 답을 써야 한다.
+
+    대조표를 주지 않으면 이름은 원문 `P10` 그대로다 — 세는 방식만 본다.
+    """
     rows = [_row_20260809("FRINF027", 'Move-To Waypoint: "P10"',
                           _at(layout, "LOC_중앙킬존")),
             _row_20260809("P10", "None", _at(layout, "LOC_중앙킬존"))]
@@ -246,3 +249,18 @@ def test_no_bare_control_point_numbers_survive():
     names = {"P3": "LOC_중앙계곡", "P10": "LOC_남측제1방어선"}
     out, _, _, _ = rewrite(rows, _layout(), place_names=names)
     assert not [r for r in out if re.fullmatch(r"P\d+", r["object"])]
+
+
+def test_control_point_subject_becomes_a_place_name(layout):
+    """주체로 나온 통제점도 지명으로 나간다.
+
+    object 열만 바꾸면 한 파일 안에서 같은 자리가 두 이름으로 불린다
+    (실측 20260809 ground_truth: `Move-To Waypoint: "P10"`의 대상은
+    `LOC_중앙킬존`인데 그 통제점 자신의 위치 행 3,025개는 주체가 `P10`).
+    """
+    rows = [_row_20260809("P10", "None", _at(layout, "LOC_중앙킬존"))]
+    out, _, _, tally = rewrite(rows, layout,
+                               place_names={"P10": "LOC_중앙킬존"})
+    assert out[0]["subject"] == "LOC_중앙킬존"
+    assert tally.control_subjects == {"LOC_중앙킬존"}
+    assert tally.entities == 0            # 자리는 객체가 아니다

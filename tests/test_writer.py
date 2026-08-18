@@ -6,7 +6,6 @@ import pytest
 
 from vtmak.gates import blocking
 from vtmak.geometry import BattlefieldLayout
-from vtmak.orbat import OrbatConfig, build_orbat
 from vtmak.paths import SCENARIO
 from vtmak.parser import PatternMap, parse_scenario
 from vtmak.ranges import WeaponRanges
@@ -14,10 +13,9 @@ from vtmak.registry import UNCLASSIFIED, ClassMap, build_registry
 from vtmak.roster import RosterPlan, filter_events, select_roster
 from vtmak.scnx.catalog import DisCatalog, TaskCatalog, TaskKinds
 from vtmak.scnx.gates import check_g3, weapons_in
-from vtmak.scnx.golden import Golden, _balanced_records
+from vtmak.scnx.golden import Golden
 from vtmak.scnx.plan import SKIP_UNSUPPORTED, PlanStep
 from vtmak.scnx.pack import ensure_golden
-from vtmak.scnx.places import PlaceCodes
 from vtmak.scnx.spec import build_spec
 from vtmak.scnx.writer import get_writer
 
@@ -25,9 +23,8 @@ ROOT = Path(__file__).resolve().parents[1]
 GOLDEN = ensure_golden(ROOT / "yewon_test")
 
 
-def _build_spec(orbat=None):
-    """test_spec._build과 같은 구성. 명부를 감축한 뒤에야 편제를 지어야
-    unit_of_entity가 저작 대상 328객체와 어긋나지 않는다."""
+@pytest.fixture(scope="module")
+def built():
     cfg = ROOT / "config"
     pm = PatternMap.load(cfg / "pattern_map.csv")
     res = parse_scenario(
@@ -42,50 +39,12 @@ def _build_spec(orbat=None):
                          task_ids)
     events = filter_events(res.events, keep)
     reg = {o: d for o, d in reg.items() if o in keep}
-    ob = build_orbat(reg, OrbatConfig.load(cfg / "orbat.json")) if orbat else None
     dis = DisCatalog.load(cfg / "dis_catalog.csv")
     spec = build_spec(events, reg, lay, pm,
                       TaskCatalog.load(cfg / "task_catalog.csv"),
                       TaskKinds.load(cfg / "task_kinds.csv"), dis,
-                      WeaponRanges.load(cfg / "weapon_ranges.csv"), "battle",
-                      orbat=ob)
+                      WeaponRanges.load(cfg / "weapon_ranges.csv"), "battle")
     return spec, dis
-
-
-@pytest.fixture(scope="module")
-def built():
-    return _build_spec()
-
-
-@pytest.fixture(scope="module")
-def spec_with_orbat():
-    spec, _ = _build_spec(orbat=True)
-    return spec
-
-
-@pytest.fixture(scope="module")
-def writer():
-    return get_writer("template", str(GOLDEN))
-
-
-@pytest.fixture(scope="module")
-def writer_with_place_codes():
-    """place_codes를 준 writer.
-
-    F3 리뷰: 위 `writer` 픽스처는 place_codes 없이 만들어져 `_oob`가 전부
-    `P{k}` 폴백 경로를 탄다. 그래서 04에서 `place_codes=`가 빠지거나
-    시그니처가 리팩터돼도 기존 테스트는 초록으로 남는다. 실제로 04가
-    쓰는 것과 같은 경로(place_codes 있음)를 별도 픽스처로 추가한다 —
-    기존 픽스처는 그대로 두어 폴백 경로 커버리지도 잃지 않는다.
-    """
-    cfg = ROOT / "config"
-    place_codes = PlaceCodes.load(cfg / "location_codes.csv")
-    return get_writer("template", str(GOLDEN), place_codes=place_codes)
-
-
-@pytest.fixture(scope="module")
-def oob_with_place_codes(spec_with_orbat, writer_with_place_codes):
-    return writer_with_place_codes._oob(spec_with_orbat)
 
 
 @pytest.fixture(scope="module")
@@ -93,16 +52,6 @@ def written(built, tmp_path_factory):
     spec, _ = built
     out_dir = tmp_path_factory.mktemp("scnx")
     return get_writer("template", str(GOLDEN)).write(spec, out_dir)
-
-
-@pytest.fixture(scope="module")
-def scnx_with_units(spec_with_orbat, writer):
-    return writer._oob(spec_with_orbat)
-
-
-@pytest.fixture(scope="module")
-def omp_with_units(spec_with_orbat, writer):
-    return writer._omp(spec_with_orbat)
 
 
 def test_g3_has_no_blocking_violations(built):
@@ -310,78 +259,3 @@ def test_mapping_tables_stay_out_of_the_code():
     src = (ROOT / "vtmak" / "scnx" / "plan.py").read_text(encoding="utf-8")
     for name in ("LABEL_CANDIDATES", "REF_FIELD", "FIRE_KIND"):
         assert f"{name}:" not in src and f"{name} =" not in src, name
-
-
-def test_org_tree_closes_with_units(scnx_with_units):
-    """parent-name이 전부 이 .oob 안에서 해석된다. 안 그러면 무한 로딩이다."""
-    oob = scnx_with_units
-    declared = set(re.findall(r'\(uuid\s+"VRF_UUID:([^"]*)"', oob)) | {
-        "1 Force", "2 Force", "3 Force"}
-    refs = re.findall(r'\(parent-name\s+(?:"VRF_UUID:([^"]*)"|(\S+?))\s*\)', oob)
-    dangling = sorted({a for a, b in refs if a and a not in declared} |
-                      {b for a, b in refs if b and b != "USE-DEFAULT"})
-    assert dangling == []
-
-
-def test_every_entity_hangs_under_a_platoon(scnx_with_units, spec_with_orbat):
-    """고아 엔티티가 있으면 편제가 반쪽이다.
-
-    브리프 원안의 정규식(`\\(local-vrf-object.*?\\n   \\)`)은 writer가 정확히
-    3칸 들여쓰기로 레코드를 닫는다는 가정에 기대 취약하다. 대신 golden.py가
-    aggregate 파싱에 쓰는 것과 같은 괄호 균형 파싱(`_balanced_records`)으로
-    레코드를 잘라 들여쓰기와 무관하게 만든다. 단언 내용(엔티티 328 전원이
-    소대 uuid 밑에 걸린다)은 원안 그대로 유지한다.
-    """
-    oob = scnx_with_units
-    pl_uuids = {u.uuid for u in spec_with_orbat.units if u.echelon == "소대"}
-    recs = _balanced_records(oob, "(local-vrf-object")
-    hung = 0
-    for r in recs:
-        m = re.search(r'\(parent-name\s+"VRF_UUID:([^"]*)"', r)
-        if m and m.group(1) in pl_uuids:
-            hung += 1
-    assert hung == len(spec_with_orbat.entities)
-
-
-def test_omp_lists_every_object_with_units(scnx_with_units, omp_with_units,
-                                           spec_with_orbat):
-    oob_uuids = set(re.findall(r'\(uuid\s+"VRF_UUID:([^"]*)"', scnx_with_units))
-    omp_uuids = set(re.findall(r'\(uuid\s+"VRF_UUID:([^"]*)"', omp_with_units))
-    assert oob_uuids == omp_uuids
-    assert len(omp_uuids) == (len(spec_with_orbat.entities)
-                              + len(spec_with_orbat.units)
-                              + len(spec_with_orbat.control_objects)
-                              + len(spec_with_orbat.fixed_objects))
-
-
-def test_control_point_markings_are_place_codes_not_p_numbers(
-        oob_with_place_codes, spec_with_orbat):
-    """place_codes를 준 실제 경로(04와 같은 경로)에서 통제점 marking을 본다.
-
-    place_codes 없이 만든 writer로는 `_oob`가 항상 `P{k}` 폴백을 타서, 04에서
-    `place_codes=` 인자가 빠지거나 시그니처가 리팩터돼도 기존 3개 `_oob`
-    테스트가 계속 초록이었다(F3). 여기서는 marking-text가 지명 코드이고
-    `P\\d+` 형태가 0개임을 직접 단언한다.
-    """
-    marks = re.findall(r'\(marking-text "([^"]*)"\)', oob_with_place_codes)
-    assert len(marks) == (len(spec_with_orbat.entities)
-                          + len(spec_with_orbat.control_objects)
-                          + len(spec_with_orbat.units))
-    n_control = len(spec_with_orbat.control_objects)
-    assert n_control > 0
-    p_number = re.compile(r"^P\d+$")
-    p_number_marks = [m for m in marks if p_number.match(m)]
-    assert p_number_marks == [], p_number_marks
-
-
-def test_unit_records_leave_formation_name_blank(scnx_with_units,
-                                                  spec_with_orbat):
-    """골든 부대 레코드 7개(대대·중대 2·소대 4) 전수 확인 결과 formation-name이
-    전부 빈 문자열이었다 — 대형 카탈로그 조회 값으로 보여 저작 시 채우면 안
-    된다. 부대명은 object-label에 있으니 이 필드는 골든 값 그대로 둔다.
-    """
-    recs = _balanced_records(scnx_with_units, "(aggregate ")
-    assert len(recs) == len(spec_with_orbat.units)
-    for r in recs:
-        m = re.search(r'\(formation-name\s+"([^"]*)"', r)
-        assert m and m.group(1) == "", r[:200]

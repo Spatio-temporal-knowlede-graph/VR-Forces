@@ -47,18 +47,6 @@ class ControlObjectSpec:
 
 
 @dataclass
-class UnitSpec:
-    unit_id: str
-    name: str
-    marking: str
-    uuid: str
-    echelon: str
-    faction: str
-    parent_uuid: str      # 상위 부대 uuid. 대대는 "" (force 루트에 건다)
-    coord: Coord
-
-
-@dataclass
 class ScnxSpec:
     scenario_id: str
     terrain: str
@@ -70,10 +58,6 @@ class ScnxSpec:
     fixed_objects: list[FixedObject] = field(default_factory=list)
     # 고정 객체에 붙는 Plan 블록(Set·Task). marking → PLN 문자열들.
     fixed_plans: dict[str, list[str]] = field(default_factory=dict)
-    # 편제(orbat)가 주어졌을 때만 채워진다.
-    units: list[UnitSpec] = field(default_factory=list)
-    # 엔티티 object_id → 소속 소대 uuid. writer가 parent-name을 잇는다.
-    unit_of_entity: dict[str, str] = field(default_factory=dict)
 
 
 SUPPRESSED_STATES = {"제압"}
@@ -172,8 +156,7 @@ class _Ctx:
                  registry: dict[str, EntityDef],
                  entity_uuids: dict[str, str],
                  events: list[Event],
-                 coords: dict[str, Coord] | None = None,
-                 orbat=None) -> None:
+                 coords: dict[str, Coord] | None = None) -> None:
         self._layout = layout
         self._ids = ids
         self._reg = registry
@@ -182,22 +165,13 @@ class _Ctx:
         self._tracker = PositionTracker(events, registry)
         self._hit_at = engagement_locations(events)
         self.referenced_locs: set[str] = set()
-        # 부대 선두 — 대형 추종 이동(follow-entity)의 추종 대상. 편제가 있으면
-        # 소대 선두를, 없으면 타입 접두사 선두를 쓴다.
-        self._orbat = orbat
+        # 부대 선두 — 대형 추종 이동(follow-entity)의 추종 대상.
         self._leader: dict[str, str] = {}
         for oid in sorted(entity_uuids):
-            self._leader.setdefault(self._unit(oid), oid)
-
-    def _unit(self, object_id: str) -> str:
-        if self._orbat is not None:
-            pl = self._orbat.platoon_of(object_id)
-            if pl:
-                return pl
-        return unit_of(object_id)
+            self._leader.setdefault(unit_of(oid), oid)
 
     def unit_leader(self, object_id: str) -> str | None:
-        lead = self._leader.get(self._unit(object_id))
+        lead = self._leader.get(unit_of(object_id))
         return None if lead == object_id else lead
 
     def entity_uuid(self, object_id: str) -> str | None:
@@ -264,8 +238,7 @@ def build_spec(events: list[Event], registry: dict[str, EntityDef],
                dis: DisCatalog, ranges: WeaponRanges,
                scenario_id: str, seed: str = "",
                fixed: list[FixedObject] | None = None,
-               placement: PlacementRules | None = None,
-               orbat=None) -> ScnxSpec:
+               placement: PlacementRules | None = None) -> ScnxSpec:
     ids = IdAllocator(seed or scenario_id)
     taskable = {oid: d for oid, d in sorted(registry.items()) if d.taskable}
     entity_uuids = {oid: ids.alloc("entity", oid) for oid in taskable}
@@ -275,9 +248,8 @@ def build_spec(events: list[Event], registry: dict[str, EntityDef],
     # 방위가 먼저다 — 대형은 그 방위에 수직으로 눕는다(방어선이 적을 가로막게).
     rules = placement or PlacementRules.load(CONFIG / "placement_rules.csv")
     headings = build_headings(taskable, events, layout)
-    coords = build_positions(taskable, layout, rules, headings,
-                             unit_of_object=(orbat.platoon_of if orbat else None))
-    ctx = _Ctx(layout, ids, registry, entity_uuids, events, coords, orbat)
+    coords = build_positions(taskable, layout, rules, headings)
+    ctx = _Ctx(layout, ids, registry, entity_uuids, events, coords)
 
     spec = ScnxSpec(scenario_id=scenario_id, terrain=layout.terrain,
                     fixed_objects=list(fixed or []))
@@ -323,63 +295,4 @@ def build_spec(events: list[Event], registry: dict[str, EntityDef],
             uuid=ids.alloc("control_object", lid),
             name=lid.removeprefix("LOC_"),
             coord=layout.coord(lid)))
-
-    if orbat is not None:
-        spec.units, spec.unit_of_entity = _build_units(orbat, spec, ids)
     return spec
-
-
-def _centroid(coords: list[Coord]) -> Coord:
-    """부대 좌표는 구성원 배치 좌표의 중심점이다(연구내용 §3.2).
-
-    고도는 평균이 아니라 중심점에서 다시 지형을 읽어야 맞지만, 부대는 표시용
-    노드라 지면에 박히지 않아도 된다. 평균으로 둔다.
-    """
-    n = len(coords)
-    return Coord(sum(c.lat for c in coords) / n,
-                 sum(c.lon for c in coords) / n,
-                 sum(c.alt for c in coords) / n)
-
-
-def _build_units(orbat, spec: ScnxSpec, ids: IdAllocator):
-    """편제 부대마다 uuid·좌표를 확정한다.
-
-    중대·대대 좌표는 소대 좌표들의 중심점이 아니라, 예하 **전 구성원**의
-    좌표를 접어 올려 다시 낸 중심점이다 — 소대별 인원이 다르면 두 값이
-    달라진다.
-    """
-    coord_of = {e.object_id: e.coord for e in spec.entities}
-    uuid_of = {u.unit_id: ids.alloc("unit", u.unit_id) for u in orbat.units()}
-
-    # 자식이 부모보다 먼저 채워져야 한다 — 중대·대대는 예하 구성원을 접어
-    # 올려 중심점을 다시 내므로, 그 시점에 자식의 members가 비어 있으면
-    # (조용히 []) 중대·대대 좌표가 직할 소대만의 중심점으로 잘못 좁아진다.
-    # orbat.units()는 부모-먼저(대대→중대→소대) 정렬이므로 reversed()로
-    # 순회해 자식(소대)부터 처리한다(2026-08-17 리뷰: 대대 좌표가 직할 소대
-    # 구성원만 반영하고 예하 중대 구성원을 놓치는 버그 — 실측 42m 오차).
-    members: dict[str, list[Coord]] = {}
-    for u in reversed(orbat.units()):
-        if u.echelon == "소대":
-            members[u.unit_id] = [coord_of[o] for o in u.members
-                                  if o in coord_of]
-        else:
-            kids = [x.unit_id for x in orbat.units() if x.parent == u.unit_id]
-            members[u.unit_id] = [c for k in kids for c in members.get(k, [])]
-
-    out: list[UnitSpec] = []
-    for u in orbat.units():
-        cs = members.get(u.unit_id) or []
-        if not cs:
-            raise ValueError(f"구성원이 없는 부대: {u.unit_id}")
-        out.append(UnitSpec(
-            unit_id=u.unit_id, name=u.name, marking=u.marking,
-            uuid=uuid_of[u.unit_id], echelon=u.echelon, faction=u.faction,
-            parent_uuid=uuid_of[u.parent] if u.parent else "",
-            coord=_centroid(cs)))
-
-    of_entity = {}
-    for u in orbat.units():
-        for oid in u.members:
-            if oid in coord_of:
-                of_entity[oid] = uuid_of[u.unit_id]
-    return out, of_entity

@@ -6,15 +6,16 @@
 원본과 대조가 안 되고, STKG 쪽에서 어느 열이 관측이고 어느 열이 우리가
 만든 것인지 매번 되물어야 한다.
 
-바꾸는 것은 두 열뿐이다.
+바꾸는 것은 세 열뿐이다.
 
+  subject     통제점 marking(`P10`)만 대조표의 지명으로. 전투 객체는 그대로다
   predicate   시뮬레이터 원문(`Move to {-5499107.729384, ...}`)을 정규형으로
   object      원문이 대개 `-`라 비어 있던 자리를 대상으로 채운다
 
 | 원문 | predicate | object |
 |---|---|---|
 | `Move to {좌표}` | `move to` | 좌표를 붙인 지명 |
-| `Move-To Waypoint: "P10"` | `move to` | `P10` (통제점) |
+| `Move-To Waypoint: "P10"` | `move to` | 대조표의 지명. 없으면 `P10` |
 | `Follow-Entity Entity: "X"` | `Follow-Entity` | `X` |
 | `FFE-On-Location "Location={좌표}"` | `FFE-on-Location` | 좌표를 붙인 지명 |
 | `Fire Weapon` | `Fire-Weapon` | 내보내기가 준 object 열 그대로 |
@@ -23,6 +24,11 @@
 | `find_firing_position: ... Threat=X; ...` | `find_firing_position` | `X` |
 | `None` | `none` | 비움 |
 | (발사체 행) | `fired_by` | 확정된 사수. 못 하면 비움 |
+
+통제점은 주체로도 나온다(실측 20260809 ground_truth: `P1`~`P11`이 각
+3,025행). 이름은 04가 내는 대조표가 정하고 subject와 object 양쪽에 같은
+이름을 쓴다 — 한쪽만 바꾸면 같은 자리가 한 파일에서 두 이름으로 불린다.
+표에 없는 marking은 원문을 남긴다.
 
 `Fire Weapon`은 20260809판에서 새로 나왔고, 유일하게 내보내기가 대상을
 미리 채워 준다(실측 ground_truth 650행). 우리가 만든 값이 아니라 관측이므로
@@ -184,6 +190,11 @@ def rewrite(rows, layout, uuid_map=None, control_points=None,
         rec["predicate"], rec["object"] = _fields(row, layout, uuid_map,
                                                   control_points, place_names,
                                                   links, tally)
+        if is_control_point(rec["subject"]):
+            # 주체로 나온 통제점도 대조표를 태운다. object 열만 바꾸면 같은
+            # 자리가 한 파일에서 `LOC_중앙킬존`(대상)과 `P10`(주체) 두 이름으로
+            # 불린다. 표에 없으면 원문을 남긴다 — object와 같은 규칙이다.
+            rec["subject"] = place_names.get(rec["subject"], rec["subject"])
         if rec["object"]:
             tally.with_object += 1
             if is_place(rec["object"]):
@@ -197,7 +208,9 @@ def rewrite(rows, layout, uuid_map=None, control_points=None,
         tally.subjects.add(rec["subject"])
         if firing.is_munition(rec["subject"]):
             tally.munition_subjects.add(rec["subject"])
-        elif is_control_point(rec["subject"]):
+        elif is_place(rec["subject"]):
+            # 지명이 된 뒤에도 자리는 자리다. is_control_point로 세면 지명화한
+            # 통제점이 객체 11개로 둔갑한다.
             tally.control_subjects.add(rec["subject"])
         out.append(rec)
         tally.out += 1

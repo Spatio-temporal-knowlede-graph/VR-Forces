@@ -49,7 +49,7 @@ from vtmak.paths import SCENARIO                                  # noqa: E402
 from vtmak.registry import ClassMap, build_registry               # noqa: E402
 from vtmak.stkg.filter import classify, Disposition               # noqa: E402
 from vtmak.stkg.firing import is_munition                         # noqa: E402
-from vtmak.stkg.locate import is_control_point, is_place          # noqa: E402
+from vtmak.stkg.locate import is_place                            # noqa: E402
 from vtmak.stkg.rewrite import _is_coord                          # noqa: E402
 from vtmak.stkg.schema import standardize                         # noqa: E402
 
@@ -187,7 +187,10 @@ class Scan:
                 self.predicates[pred] += 1
                 if is_munition(subject):
                     self.munitions.add(subject)
-                elif is_control_point(subject):
+                elif is_place(subject):
+                    # 05가 주체로 나온 통제점을 지명으로 바꿔 내보낸다.
+                    # `P\d+`만 통제점으로 보면 그 지명 11개가 전투 객체로
+                    # 둔갑해 '못 맞춘 객체'로 남는다.
                     self.controls.add(subject)
                 else:
                     self.subjects.add(subject)

@@ -28,11 +28,6 @@ def dis():
     return DisCatalog.load(ROOT / "config" / "dis_catalog.csv")
 
 
-@pytest.fixture(scope="module")
-def golden():
-    return Golden.load(GOLDEN)
-
-
 def test_id_allocator_is_deterministic():
     a = IdAllocator("battle")
     b = IdAllocator("battle")
@@ -90,68 +85,3 @@ def test_object_ids_fit_the_dis_marking_limit():
     marks = [i.replace("-", "") for i in ids]
     assert all(len(m) <= 11 and m.isascii() for m in marks)
     assert len(set(marks)) == len(marks)
-
-
-def test_aggregate_templates_are_found(golden):
-    """골든에 대대·중대·소대 레코드가 7개 있다(2026-08-17 갱신분)."""
-    aggs = golden.aggregate_templates()
-    assert len(aggs) == 7
-    for a in aggs:
-        assert a.kind == "aggregate"
-        assert a.uuid
-        assert "(aggregate-state Disaggregated)" in a.raw
-
-
-def test_aggregate_header_match_excludes_hyphenated_fields(golden):
-    """`(aggregate`는 레코드 안쪽의 `(aggregate-state`·`(aggregate-resolution-...`
-    필드에도 부분열로 매치된다. 헤더 탐색이 공백까지 포함해 좁혀졌는지,
-    그래서 그 필드들이 별도 레코드로 잘려 들어오지 않는지 직접 확인한다."""
-    aggs = golden.aggregate_templates()
-    for a in aggs:
-        assert a.raw.startswith("(aggregate ")
-        assert not a.raw.startswith("(aggregate-state")
-        assert not a.raw.startswith("(aggregate-resolution")
-        assert a.uuid
-        assert 'marking-text "' in a.raw
-
-
-def test_aggregate_is_not_mistaken_for_an_entity(golden):
-    """aggregate의 object-type 첫 값이 3(보병과 같다). 엔티티 템플릿으로
-    새어 들어가면 보병 대신 부대 껍데기가 복제된다."""
-    for o in golden.objects:
-        assert o.kind != "aggregate"
-
-
-def test_aggregate_header_does_not_match_hyphenated_top_level_fields():
-    """합성 `.oob` 조각으로 `_parse_aggregates`를 직접 단위 테스트한다.
-
-    실제 골든에서는 `(aggregate-state ...)`·`(aggregate-resolution-...)`가
-    항상 진짜 부대 레코드 안쪽에만 있어, 위 두 테스트는 헤더를 공백 없는
-    `"(aggregate"`로 되돌려도 통과해버린다(리뷰에서 지적됨) — 어느 헤더를
-    쓰든 `_balanced_records`가 바깥 레코드를 통째로 삼켜 두 매칭이 실제
-    골든에 대해서는 구분되지 않기 때문이다. 이 필드가 부대 레코드 **바깥**
-    (최상위)에 오는 경우를 합성으로 만들어 직접 확인해야 방어가 의미를
-    가진다."""
-    from vtmak.scnx.golden import _parse_aggregates
-
-    bogus_top_level = (
-        '(aggregate-resolution-process-state-repository-default\n'
-        '   (object-type 3 (99 9 9 9 99 9 99))\n'
-        ')\n'
-    )
-    real_record = (
-        '(aggregate \n'
-        '   (vrf-entity "vrf-entity:1")\n'
-        '   (uuid "VRF_UUID:11111111-1111-1111-1111-111111111111")\n'
-        '   (marking-text "1-BN")\n'
-        '   (object-type 3 (11 1 0 0 34 0 11))\n'
-        '   (aggregate-state Disaggregated)\n'
-        ')\n'
-    )
-    oob = bogus_top_level + real_record
-
-    aggs = _parse_aggregates(oob)
-
-    assert len(aggs) == 1
-    assert aggs[0].uuid == "11111111-1111-1111-1111-111111111111"
-    assert aggs[0].raw.startswith("(aggregate ")

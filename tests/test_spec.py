@@ -4,7 +4,6 @@ from pathlib import Path
 import pytest
 
 from vtmak.geometry import BattlefieldLayout
-from vtmak.orbat import OrbatConfig, build_orbat
 from vtmak.paths import SCENARIO
 from vtmak.parser import PatternMap, parse_scenario
 from vtmak.ranges import WeaponRanges
@@ -17,7 +16,7 @@ from vtmak.scnx.spec import build_spec
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _build(orbat=None):
+def _build():
     cfg = ROOT / "config"
     pm = PatternMap.load(cfg / "pattern_map.csv")
     res = parse_scenario(
@@ -33,25 +32,17 @@ def _build(orbat=None):
                          task_ids)
     events = filter_events(res.events, keep)
     reg = {o: d for o, d in reg.items() if o in keep}
-    # 편제는 감축된(=328객체가 아니라 축소된) reg로 지어야 한다. 감축 전 reg를
-    # 넘기면 편제에 명부 밖 객체가 섞여 unit_of_entity가 어긋난다.
-    ob = build_orbat(reg, OrbatConfig.load(cfg / "orbat.json")) if orbat else None
     return build_spec(events, reg, lay, pm,
                       TaskCatalog.load(cfg / "task_catalog.csv"),
                       TaskKinds.load(cfg / "task_kinds.csv"),
                       DisCatalog.load(cfg / "dis_catalog.csv"),
                       WeaponRanges.load(cfg / "weapon_ranges.csv"),
-                      scenario_id="battle", orbat=ob)
+                      scenario_id="battle")
 
 
 @pytest.fixture(scope="module")
 def spec():
     return _build()
-
-
-@pytest.fixture(scope="module")
-def spec_with_orbat():
-    return _build(orbat=True)
 
 
 def test_entities_exclude_static_objects(spec):
@@ -433,83 +424,3 @@ def test_no_task_objects_get_no_move_or_fire_after_that_line(spec):
            and s.task_kind in ("move", "move_slow", "follow",
                                "fire_direct", "fire_indirect", "suppress")]
     assert bad == [], bad[:5]
-
-
-def test_units_are_built_when_orbat_is_given(spec_with_orbat):
-    spec = spec_with_orbat
-    assert len(spec.units) == 67
-    by_ech = {}
-    for u in spec.units:
-        by_ech[u.echelon] = by_ech.get(u.echelon, 0) + 1
-    assert by_ech == {"소대": 52, "중대": 13, "대대": 2}
-
-
-def _full_members(spec, uuid: str, platoon_members: dict) -> list:
-    """부대 uuid → 예하 **전 구성원** object_id(소대는 자기 자신을 재귀 종료로).
-
-    소대는 unit_of_entity로 바로 나오고, 중대·대대는 자식 부대(parent_uuid로
-    연결됨)의 전 구성원을 이어붙여 재귀적으로 접어 올린다.
-    """
-    u = next(x for x in spec.units if x.uuid == uuid)
-    if u.echelon == "소대":
-        return list(platoon_members.get(uuid, []))
-    kids = [x.uuid for x in spec.units if x.parent_uuid == uuid]
-    out = []
-    for k in kids:
-        out += _full_members(spec, k, platoon_members)
-    return out
-
-
-def test_unit_coord_is_the_member_centroid(spec_with_orbat):
-    """부대 위치 = 구성원 배치 좌표의 중심점(연구내용 §3.2).
-
-    소대 하나만 보면 대대가 직할 소대만 반영하고 예하 중대 구성원을 놓치는
-    버그(2026-08-17 리뷰에서 실측: 42m 오차)를 못 잡는다. 소대·중대·대대
-    전부를, 각 부대의 예하 전 구성원 기준으로 검사한다.
-    """
-    spec = spec_with_orbat
-    coords = {e.object_id: e.coord for e in spec.entities}
-    platoon_members: dict[str, list[str]] = {}
-    for oid, uu in spec.unit_of_entity.items():
-        platoon_members.setdefault(uu, []).append(oid)
-
-    seen_echelons = set()
-    for u in spec.units:
-        members = _full_members(spec, u.uuid, platoon_members)
-        assert members, u.unit_id
-        lat = sum(coords[o].lat for o in members) / len(members)
-        lon = sum(coords[o].lon for o in members) / len(members)
-        assert abs(u.coord.lat - lat) < 1e-9, u.unit_id
-        assert abs(u.coord.lon - lon) < 1e-9, u.unit_id
-        seen_echelons.add(u.echelon)
-    assert seen_echelons == {"소대", "중대", "대대"}
-
-
-def test_company_centroid_differs_from_average_of_platoon_centroids(spec_with_orbat):
-    """중대 좌표는 소대 중심점들의 평균이 아니라, 예하 전 구성원의 중심점이다.
-
-    소대 인원이 같으면 두 값이 우연히 일치할 수 있으므로, 인원이 다른 소대를
-    둔 중대를 찾아서 확인한다 — 이 계약을 지키지 않으면 값이 갈리지 않는다.
-    """
-    spec = spec_with_orbat
-    platoon_members: dict[str, list[str]] = {}
-    for oid, uu in spec.unit_of_entity.items():
-        platoon_members.setdefault(uu, []).append(oid)
-
-    checked = False
-    for co in spec.units:
-        if co.echelon != "중대":
-            continue
-        kids = [u for u in spec.units if u.parent_uuid == co.uuid]
-        sizes = {len(platoon_members.get(k.uuid, [])) for k in kids}
-        if len(kids) < 2 or len(sizes) < 2:
-            continue
-        naive_lat = sum(k.coord.lat for k in kids) / len(kids)
-        assert abs(co.coord.lat - naive_lat) > 1e-6, co.unit_id
-        checked = True
-    assert checked, "인원이 다른 소대를 둔 중대를 찾지 못했다 — 이 테스트가 아무것도 못 지킨다"
-
-
-def test_every_entity_maps_to_a_platoon_uuid(spec_with_orbat):
-    spec = spec_with_orbat
-    assert set(spec.unit_of_entity) == {e.object_id for e in spec.entities}

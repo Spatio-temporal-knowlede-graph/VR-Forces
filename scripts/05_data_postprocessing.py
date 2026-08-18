@@ -72,7 +72,7 @@ def main() -> int:
     cp = Path(args.control_points)
     if cp.exists():
         with open(cp, encoding="utf-8-sig", newline="") as fh:
-            place_names = {r["code"]: r["loc_id"] for r in csv.DictReader(fh)}
+            place_names = {r["marking"]: r["loc_id"] for r in csv.DictReader(fh)}
         print(f"  통제점 대조표 {len(place_names)}행")
     else:
         print(f"  통제점 대조표 없음({cp.name}) — 통제점 이름을 그대로 둔다")

@@ -18,7 +18,6 @@ for _s in (sys.stdout, sys.stderr):
 
 from vtmak.gates import blocking, check_g0                        # noqa: E402
 from vtmak.geometry import BattlefieldLayout                      # noqa: E402
-from vtmak.orbat import OrbatConfig, build_orbat                  # noqa: E402
 from vtmak.parser import Event, PatternMap                        # noqa: E402
 from vtmak.ranges import WeaponRanges                             # noqa: E402
 from vtmak.registry import ClassMap, build_registry               # noqa: E402
@@ -27,7 +26,6 @@ from vtmak.scnx.fixed import load_fixed            # noqa: E402
 from vtmak.scnx.gates import check_g3                             # noqa: E402
 from vtmak.scnx.golden import Golden                              # noqa: E402
 from vtmak.scnx.pack import ensure_golden                         # noqa: E402
-from vtmak.scnx.places import PlaceCodes                          # noqa: E402
 from vtmak.scnx.spec import build_spec                            # noqa: E402
 from vtmak.scnx.writer import get_writer                          # noqa: E402
 
@@ -67,13 +65,11 @@ def main() -> int:
         return 1
 
     fixed = load_fixed(CFG / "fixed_objects.json", ROOT, layout)
-    orbat = build_orbat(registry, OrbatConfig.load(CFG / "orbat.json"))
     spec = build_spec(events, registry, layout, pmap,
                       TaskCatalog.load(CFG / "task_catalog.csv"),
                       TaskKinds.load(CFG / "task_kinds.csv"),
                       dis, ranges,
-                      scenario_id="battle", fixed=fixed, orbat=orbat)
-    print(f"부대 {len(spec.units)} (대대·중대·소대)")
+                      scenario_id="battle", fixed=fixed)
 
     golden_path = ensure_golden(args.golden)
     if _report(check_g3(spec, Golden.load(golden_path), dis)):
@@ -81,25 +77,22 @@ def main() -> int:
         return 1
 
     OUT.mkdir(parents=True, exist_ok=True)
-    # 통제점 marking을 지명 코드로 낸다 — 순번(P{k})이면 CSV로 그대로 새어
-    # 나가 지명이 사라진다.
-    place_codes = PlaceCodes.load(CFG / "location_codes.csv")
-    out = get_writer(args.writer, str(golden_path),
-                      place_codes=place_codes).write(spec, OUT)
+    out = get_writer(args.writer, str(golden_path)).write(spec, OUT)
 
-    # 통제점 대조표 — uuid를 배정하는 이 코드가 표도 같이 낸다. 05가 이 표로
-    # CSV의 marking(`P{k}`/코드)을 지명으로 되돌린다.
+    # 통제점 대조표. `.scnx`에는 안 들어가고 후처리(05)가 쓴다.
+    # 시뮬레이터가 통제점을 marking으로 내보내는데 그 marking이 순번(P{k})이라
+    # 지명이 사라진다(실측 `Move-To Waypoint: "P3"`). 순번을 매기는 코드가
+    # 표도 같이 내므로 어긋날 수 없다 — writer._oob의 enumerate와 같은 순서다.
     cp_path = ROOT / "build" / "timetable" / "battle_control_points.csv"
     cp_path.parent.mkdir(parents=True, exist_ok=True)
     with open(cp_path, "w", encoding="utf-8", newline="") as fh:
         w = csv.writer(fh)
-        w.writerow(["code", "loc_id", "uuid", "lat", "lon"])
-        for c in spec.control_objects:
-            w.writerow([place_codes.code(c.ref_id), c.ref_id, c.uuid,
+        w.writerow(["marking", "loc_id", "uuid", "lat", "lon"])
+        for k, c in enumerate(spec.control_objects, 1):
+            w.writerow([f"P{k}", c.ref_id, c.uuid,
                         f"{c.coord.lat:.7f}" if c.coord else "",
                         f"{c.coord.lon:.7f}" if c.coord else ""])
     print(f"통제점 대조표 {len(spec.control_objects)}행 → {cp_path.name}")
-
     planned = sum(1 for v in spec.entity_plans.values()
                   if any(s.pln for s in v))
     tasks = sum(1 for v in spec.entity_plans.values() for s in v if s.pln)

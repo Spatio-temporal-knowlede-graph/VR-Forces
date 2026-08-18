@@ -18,7 +18,7 @@ from typing import Protocol
 
 from ..geometry import Coord, tait_bryan
 from .golden import Golden
-from .spec import ControlObjectSpec, EntitySpec, ScnxSpec, UnitSpec
+from .spec import ControlObjectSpec, EntitySpec, ScnxSpec
 
 
 class IScnxWriter(Protocol):
@@ -191,8 +191,7 @@ def _check_org_tree(oob: str) -> None:
 class TemplateScnxWriter:
     def __init__(self, golden_path: str = "yewon_test.scnx",
                  emit_plans: bool = True,
-                 ai_enabled: bool = AI_ENABLED_DEFAULT,
-                 place_codes=None) -> None:
+                 ai_enabled: bool = AI_ENABLED_DEFAULT) -> None:
         self.golden = Golden.load(golden_path)
         self.emit_plans = emit_plans
         self.ai_enabled = ai_enabled
@@ -200,49 +199,9 @@ class TemplateScnxWriter:
         self._life = self.golden.template_for("3")   # 보병
         self._point = self.golden.template_for("16")  # 점
         self._route = self.golden.template_for("17")  # 라우트
-        # 부대(aggregate) 템플릿. 제대와 무관하게 전부 object-type 3
-        # (11 1 0 0 34 0 11)이라 어느 것을 써도 같다 — 가장 짧은 것을 쓴다.
-        aggs = self.golden.aggregate_templates()
-        self._agg = aggs[0] if aggs else None
-        # 통제점 marking. 없으면 옛 순번(P{k})으로 폴백한다 — 코드표 없이
-        # 만든 .scnx도 로드는 되어야 한다.
-        self.place_codes = place_codes
 
     # --- 레코드 치환 ---------------------------------------------------------
-    def _unit_record(self, u: UnitSpec, oid: str) -> str:
-        """골든 aggregate 레코드를 복제해 부대 하나를 만든다.
-
-        제대는 DIS 타입이 아니라 트리로 구분된다(실측: 대대·중대·소대가 전부
-        object-type 3 (11 1 0 0 34 0 11)). 대대만 force 루트에 걸고
-        subordinate-of-force-level True를 준다 — 골든이 그렇게 되어 있다.
-
-        formation-name은 건드리지 않는다 — 골든 부대 레코드 7개(대대·중대
-        2·소대 4)를 전수 확인한 결과 전부 빈 문자열이었다. VR-Forces 대형
-        카탈로그를 조회하는 값으로 보여 임의 문자열을 넣으면 로드 시 조회
-        실패 위험이 있다. 부대명은 이미 object-label 치환으로 표시된다.
-        """
-        if self._agg is None:
-            raise ValueError("골든에 aggregate 템플릿이 없다")
-        force = _FORCE.get(u.faction, "ForceNeutral")
-        r = self._agg.raw
-        r = _RE_OID.sub(f'(object-identifier  "{oid}"', r, count=1)
-        r = _RE_MARK.sub(f'(marking-text "{u.marking}"', r, count=1)
-        r = _RE_LABEL.sub(f'(object-label "{u.name}"', r, count=1)
-        r = _RE_UUID.sub(f'(uuid  "VRF_UUID:{u.uuid}"', r, count=1)
-        r = _RE_FORCE.sub(f"(force {force})", r)
-        if u.parent_uuid:
-            r = _RE_PARENT.sub(f'(parent-name  "VRF_UUID:{u.parent_uuid}")',
-                               r, count=1)
-            r = _RE_SUBFL.sub("(subordinate-of-force-level False)", r, count=1)
-        else:
-            r = _RE_PARENT.sub(
-                f'(parent-name  "VRF_UUID:{_FORCE_ROOT[force]}")', r, count=1)
-            r = _RE_SUBFL.sub("(subordinate-of-force-level True)", r, count=1)
-        r = _RE_POS.sub(f"(position  {_fmt_ecef(u.coord)})", r)
-        return r
-
-    def _entity_record(self, e: EntitySpec, oid: str, mark: str,
-                       parent_uuid: str = "") -> str:
+    def _entity_record(self, e: EntitySpec, oid: str, mark: str) -> str:
         if e.dis is None:
             raise ValueError(f"DIS 미확정으로 저작 불가: {e.object_id} "
                              "(dis_catalog.csv 채우기 필요)")
@@ -268,16 +227,10 @@ class TemplateScnxWriter:
         #     UUID를 참조한다 — VR-Forces가 조직 트리를 못 닫아 로딩이 안 끝난다.
         # (2) donor가 '1 Force' 직속이면 force만 ForceOpposing으로 바꾼 적군이
         #     아군 force 밑에 들어간다.
-        # 편제가 있으면 소속 소대 밑에, 없으면 force 루트에 건다. 골든 예하가
-        # 아니라 우리가 선언한 부대라 dangling이 생기지 않는다.
-        if parent_uuid:
-            r = _RE_PARENT.sub(
-                f'(parent-name  "VRF_UUID:{parent_uuid}")', r, count=1)
-            r = _RE_SUBFL.sub("(subordinate-of-force-level False)", r, count=1)
-        else:
-            r = _RE_PARENT.sub(
-                f'(parent-name  "VRF_UUID:{_FORCE_ROOT[force]}")', r, count=1)
-            r = _RE_SUBFL.sub("(subordinate-of-force-level True)", r, count=1)
+        # force에 맞는 루트로 다시 걸고 force 직속으로 되돌린다.
+        r = _RE_PARENT.sub(
+            f'(parent-name  "VRF_UUID:{_FORCE_ROOT[force]}")', r, count=1)
+        r = _RE_SUBFL.sub("(subordinate-of-force-level True)", r, count=1)
         r = _RE_POS.sub(f"(position  {_fmt_ecef(e.coord)})", r)
         # 방위는 ECEF 기준 오일러각이라 위경도마다 값이 다르다 — 좌표를 바꾼
         # 다음에 계산해야 맞는다. 피치·롤은 0으로 둔다(Ground Clamping이
@@ -303,25 +256,15 @@ class TemplateScnxWriter:
     def _oob(self, spec: ScnxSpec) -> str:
         parts = ["(order-of-battle"]
         n = 3001
-        # 대대 → 중대 → 소대 순으로 먼저 낸다. VR-Forces는 uuid로 트리를 닫아
-        # 순서를 안 따지지만, 사람이 읽을 때 위에서 아래로 내려가는 편이 낫다.
-        rank = {"대대": 0, "중대": 1, "소대": 2}
-        for u in sorted(spec.units, key=lambda x: (rank[x.echelon], x.unit_id)):
-            parts.append("  " + self._unit_record(u, f"1:3001:{n}"))
-            n += 1
         for e in spec.entities:
             # marking은 DIS 네트워크 이름(11byte). 객체 ID에서 하이픈만 빼면
             # 최장 11자에 딱 들어가고 전부 유일하다. Data Logger 출력에서
             # 시나리오 객체로 되짚으려면 이 값이 의미를 가져야 한다.
             parts.append("  " + self._entity_record(
-                e, f"1:3001:{n}", e.object_id.replace("-", "")[:11],
-                spec.unit_of_entity.get(e.object_id, "")))
+                e, f"1:3001:{n}", e.object_id.replace("-", "")[:11]))
             n += 1
         for k, c in enumerate(spec.control_objects, 1):
-            # marking이 CSV로 그대로 나간다. 순번(P{k})을 쓰면 지명이 사라진다.
-            mark = (self.place_codes.code(c.ref_id) if self.place_codes
-                    else f"P{k}")
-            parts.append("  " + self._control_record(c, f"1:3001:{n}", mark))
+            parts.append("  " + self._control_record(c, f"1:3001:{n}", f"P{k}"))
             n += 1
         for f in spec.fixed_objects:
             # 원본 시나리오의 레코드를 쓴다. object-identifier만 이 .oob 안에서
@@ -377,7 +320,6 @@ class TemplateScnxWriter:
         """
         rows = []
         for uid in ([e.uuid for e in spec.entities]
-                    + [u.uuid for u in spec.units]
                     + [c.uuid for c in spec.control_objects]
                     + [f.uuid for f in spec.fixed_objects]):
             rows.append(
@@ -434,10 +376,9 @@ def _gstem(g: Golden) -> str:
     return Path(_gname(g, ".scn")).stem
 
 
-def get_writer(name: str, golden: str = "yewon_test.scnx",
-                place_codes=None) -> IScnxWriter:
+def get_writer(name: str, golden: str = "yewon_test.scnx") -> IScnxWriter:
     if name == "dir":
         return DirWriter()
     if name == "template":
-        return TemplateScnxWriter(golden, place_codes=place_codes)
+        return TemplateScnxWriter(golden)
     raise ValueError(f"알 수 없는 writer: {name} (dir|template)")
