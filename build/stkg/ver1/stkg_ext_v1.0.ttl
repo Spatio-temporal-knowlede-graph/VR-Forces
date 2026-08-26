@@ -1,0 +1,228 @@
+@prefix bfstkg:  <https://example.org/onto/battlefield-stkg#> .
+@prefix owl:     <http://www.w3.org/2002/07/owl#> .
+@prefix rdf:     <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:    <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .
+@prefix skos:    <http://www.w3.org/2004/02/skos/core#> .
+
+#################################################################
+## stkg_ext_v1.0.ttl — 확장 스키마
+## VR-Forces dataset ver1.0 (20260809_175237) 적재에 필요하나
+## classes_VR_with_properties.ttl 에 아직 없는 용어만 모았다.
+## 검토 후 본 온톨로지에 병합하거나, 이대로 함께 로드해서 쓴다.
+##
+## 배경: 데이터팀 CSV가 8열 → 17열로 바뀌었다.
+##   신설: force, tracking_id, uuid, entity_type,
+##         damage, smoke, flaming, mobility_kill, firepower_kill, suppression_level
+##   삭제: CID  ← RecognitionLevel(S7) · bfstkg:cid 의 유일한 소스였음
+#################################################################
+
+#################################################################
+## 명명 규칙 (2026-08-25 명문화)
+##
+##  observed*  관측 단계의 판정. 정합 이후의 확정값과 짝을 이룰 때만 쓴다.
+##             bfstkg:observedForce (Track)  ↔  bfstkg:hasForce (BattlefieldEntity)
+##             본 온톨로지의 observedPredicate·observedObject 도 같은 계열이며
+##             관측이 담은 관계의 술어·목적어를 뜻한다.
+##
+##  source*    원자료 열의 원문. 해석하지 않고 그대로 보존하는 값.
+##             bfstkg:sourceSubject ← CSV subject 열
+##
+##  ※ CSV subject 열에 observedSubject 라는 이름을 쓰지 않는 이유:
+##    CSV 의 subject-predicate-object 삼중항에서 '주어' 역할은 이미
+##    bfstkg:observationOf 가 노드(Track)로 표현한다. 같은 역할을 문자열
+##    리터럴로 한 번 더 이름 붙이면 주어가 노드와 문자열 두 형태로 갈라진다.
+##    subject 열이 실제로 하는 일은 '관측된 주어'가 아니라 '원자료가 그 트랙에
+##    붙여둔 이름표'이므로 역할명이 아니라 출처명을 쓴다.
+##    (실제로 subject 는 99.997% 가 uuid 와 같은 값이고, 다른 경우는
+##     지형지물 행 33,277 과 UAV 탄약 행 91 뿐이다.)
+#################################################################
+
+#################################################################
+# X1. 개체 유형 코드 — entity_type 열
+#   기존 bfstkg:enumCode 는 rdfs:domain 이 EntityModel 이라 Track 에 쓰면
+#   추론기가 Track 을 EntityModel 로 단정한다. 그래서 별도 속성으로 둔다.
+#################################################################
+
+bfstkg:entityType a owl:DatatypeProperty ;
+    rdfs:domain bfstkg:Track ; rdfs:range xsd:string ;
+    rdfs:label "개체유형코드"@ko , "entityType"@en ;
+    rdfs:comment "DIS 열거 코드 7필드(kind:domain:country:category:subcategory:specific:extra). 원자료 키: entity_type. 예 '1:1:225:1:1:3:0'. 기종 카탈로그(EntityModel.enumCode) 조인 키."@ko .
+
+# entity_type 첫 필드만 떼어 둔 것. 문자열 파싱 없이 트랙 종류를 거르기 위함.
+# ver1.0 관측값:  1=플랫폼(차량·화포)  2=탄약(비행 중 발사체)
+#                 3=인원(life form)   16=지형지물(LOC_*)
+# 16 도 적재한다 — subject(LOC_동측능선) ↔ uuid(P2) 대응이 그 행에만 있기 때문.
+# 그 트랙은 representsPlace 로 온톨로지 S5 Landmark 에 연결된다.
+bfstkg:disKind a owl:DatatypeProperty ;
+    rdfs:domain bfstkg:Track ; rdfs:range xsd:integer ;
+    rdfs:label "DIS개체종류"@ko , "disKind"@en ;
+    rdfs:comment "entity_type 의 첫 필드(Entity Kind). 로더가 파생. 1=플랫폼, 2=탄약, 3=인원, 16=지형지물."@ko .
+
+#################################################################
+# X1b. 원자료 보존 속성 — 열을 해석하지 않고 있는 그대로 남기는 것들
+#   방침: CSV에 있는 값은 버리지 않는다. 매핑되는 어휘가 있으면 그것도 붙이되,
+#   원시 값은 항상 함께 남겨 원본 대조가 가능하게 한다.
+#################################################################
+
+# subject 열. ver1.0에서 uuid 와 갈라졌다.
+#   전장개체 행: subject == uuid (예 둘 다 ENINF037)
+#   지형지물 행: subject=LOC_동측능선, uuid=P2  ← 이 대응은 subject 열에만 있다
+bfstkg:sourceSubject a owl:DatatypeProperty ;
+    rdfs:domain bfstkg:Track ; rdfs:range xsd:string ;
+    rdfs:label "원자료주체"@ko , "sourceSubject"@en ;
+    rdfs:comment "원자료 키: subject. 해석하지 않은 원본 문자열."@ko .
+
+# 지형지물 트랙(disKind 16)을 온톨로지 S5 Landmark 로 잇는다.
+# sourceSubject 가 등재된 LOC_* 와 일치할 때만 부여.
+bfstkg:representsPlace a owl:ObjectProperty ;
+    rdfs:domain bfstkg:Track ; rdfs:range bfstkg:Landmark ;
+    rdfs:label "대응지점"@ko , "representsPlace"@en ;
+    rdfs:comment "이 트랙이 가리키는 온톨로지 등재 지점. 시뮬레이터가 지형지물을 개체로 흘려보낼 때 생긴다(예 P2 ↔ LOC_동측능선)."@ko ;
+    skos:editorialNote "[검증 안 됨 2026-08-25] 현재 로더는 이름(sourceSubject)이 같으면 무조건 연결하며 좌표를 대조하지 않는다. ver1.0 지형지물 12곳 중 5곳(동측능선 880m·서측능선 758m·적포병진지 610m·목표A남측 490m·적북측집결지 445m)은 스트림 좌표가 등재 좌표와 어긋나, 45개 트랙이 실제와 다른 지점을 가리킨다. 온톨로지 S5 좌표는 battlefield_layout.json 및 VT MAK 정본 yewon_test.oob 와 일치하므로 스트림 쪽이 어긋난 것이다. 데이터팀 확인 요청함 — 회신 전까지 이 술어를 위치 판단 근거로 쓰지 말 것."@ko .
+
+# force 열의 원시 코드. 1·2 는 observedForce 로도 매핑되지만 0·3 은 대응 어휘가 없다.
+bfstkg:forceCode a owl:DatatypeProperty ;
+    rdfs:domain bfstkg:Track ; rdfs:range xsd:integer ;
+    rdfs:label "세력코드"@ko , "forceCode"@en ;
+    rdfs:comment "원자료 키: force. ver1.0 관측값 0·1·2·3. 1→FriendlyForce, 2→EnemyForce 는 observedForce 로도 부여. 3=지형지물, 0=미상(2건)."@ko .
+
+# 트랙의 진영. bfstkg:hasForce 는 rdfs:domain 이 BattlefieldEntity 라
+# 트랙에 쓰면 추론기가 트랙을 실개체로 단정한다. 그러면 Track 을 "실개체 정합
+# 전의 잠정 대상"으로 둔 S4.3 설계가 무너진다. 관측 단계 전용 속성을 따로 둔다.
+#   Track            ──observedForce──> EnemyForce   (관측된 진영)
+#   BattlefieldEntity ──hasForce───────> EnemyForce   (정합 이후에만)
+bfstkg:observedForce a owl:ObjectProperty ;
+    rdfs:domain bfstkg:Track ; rdfs:range bfstkg:Faction ;
+    rdfs:label "관측진영"@ko , "observedForce"@en ;
+    rdfs:comment "원자료 force 열이 알려준 트랙의 진영. 실개체의 소속(hasForce)이 아니라 관측 시점의 판정이다."@ko .
+
+#################################################################
+# X2. 관측 시점 손상·피격 상태 — damage 이하 6열
+#   전부 Observation 에 붙는다(시점마다 값이 다름).
+#################################################################
+
+bfstkg:damageLevel a owl:DatatypeProperty ;
+    rdfs:domain bfstkg:Observation ; rdfs:range xsd:integer ;
+    rdfs:label "손상단계"@ko , "damageLevel"@en ;
+    rdfs:comment "원자료 키: damage. 관측된 값은 0 과 3 뿐(0=무손상). DIS DamageState 로 보이나 데이터팀 확인 필요."@ko .
+
+bfstkg:smoking a owl:DatatypeProperty ;
+    rdfs:domain bfstkg:Observation ; rdfs:range xsd:boolean ;
+    rdfs:label "연기발생"@ko , "smoking"@en ;
+    rdfs:comment "원자료 키: smoke."@ko .
+
+bfstkg:flaming a owl:DatatypeProperty ;
+    rdfs:domain bfstkg:Observation ; rdfs:range xsd:boolean ;
+    rdfs:label "화염발생"@ko , "flaming"@en ;
+    rdfs:comment "원자료 키: flaming."@ko .
+
+bfstkg:mobilityKill a owl:DatatypeProperty ;
+    rdfs:domain bfstkg:Observation ; rdfs:range xsd:boolean ;
+    rdfs:label "기동불능"@ko , "mobilityKill"@en ;
+    rdfs:comment "원자료 키: mobility_kill. ver1.0 전 구간 false."@ko .
+
+bfstkg:firepowerKill a owl:DatatypeProperty ;
+    rdfs:domain bfstkg:Observation ; rdfs:range xsd:boolean ;
+    rdfs:label "화력불능"@ko , "firepowerKill"@en ;
+    rdfs:comment "원자료 키: firepower_kill."@ko .
+
+bfstkg:suppressionLevel a owl:DatatypeProperty ;
+    rdfs:domain bfstkg:Observation ; rdfs:range xsd:integer ;
+    rdfs:label "제압수준"@ko , "suppressionLevel"@en ;
+    rdfs:comment "원자료 키: suppression_level. 관측값 0~3."@ko .
+
+#################################################################
+# X3. 정답 마킹 개체 — object 열이 개체를 가리킬 때의 치역
+#   Follow-Entity·Fire-Weapon·find_cover 의 object 는 트랙 ID가 아니라
+#   정답 마킹(ENINF001)이다. 한 마킹이 여러 tracking_id 에 걸쳐 나타나므로
+#   (전 개체에 대해 9개 시각에 일제히 재부여됨 — 센서가 트랙을 놓친 게 아니라
+#    기록 세그먼트 경계로 보인다. X6-6 참조) 어느 트랙을 가리키는지 데이터가
+#   말해주지 않는다. 그래서 마킹 자체를 노드로 둔다.
+#
+#   ※ 이 노드는 정합(resolvedTo)의 결과가 아니라 원자료가 그대로 준 정답이다.
+#     정합 연구는 여전히 "마킹을 보지 않고 트랙끼리 묶는" 문제로 남는다.
+#################################################################
+
+bfstkg:EntityMarking a owl:Class ;
+    rdfs:label "정답마킹개체"@ko , "EntityMarking"@en ;
+    rdfs:comment "원자료가 부여한 전역 유일 실개체 식별자(uuid 열, 예 ENINF001). 관계 술어의 대상이 될 때 쓴다. Track 과는 bfstkg:groundTruthMarking(트랙) ↔ bfstkg:markingId(마킹) 리터럴로 조인한다."@ko .
+
+# [제외 2026-08-25] 지형지물 행(disKind 16)의 uuid 는 'P2'·'Waypoint 1' 같은
+#   지도 마커 내부 ID 이지 실개체 식별자가 아니다. 이 클래스의 인스턴스로
+#   만들지 않는다. 해당 값은 트랙의 groundTruthMarking 리터럴로만 남는다.
+
+# 마킹의 식별자. bfstkg:groundTruthMarking 은 rdfs:domain 이 Track 이라
+# 마킹 노드에 쓰면 추론기가 그 마킹을 Track 으로 단정한다. 둘은 분리해야 한다
+#   Track         ──groundTruthMarking──> "ENINF001"
+#   EntityMarking ──markingId───────────> "ENINF001"   (같은 리터럴로 조인)
+bfstkg:markingId a owl:DatatypeProperty ;
+    rdfs:domain bfstkg:EntityMarking ; rdfs:range xsd:string ;
+    rdfs:label "마킹식별자"@ko , "markingId"@en ;
+    rdfs:comment "정답 마킹 문자열(예 'ENINF001'). Track 의 groundTruthMarking 과 같은 값이며 이것으로 조인한다. 단 지형지물 트랙은 groundTruthMarking('P2' 등)만 갖고 대응하는 마킹 노드가 없다."@ko .
+
+# observedObject 의 치역에 EntityMarking 을 넣는 일은 본 온톨로지에서 처리했다.
+# (classes_VR_with_properties.ttl, 2026-08-25 수정 — OWL 에서 rdfs:range 재선언은
+#  교집합이 되어 오히려 좁아지므로 확장 파일에서 넓힐 수 없다.)
+
+#################################################################
+# X4. 진영 코드 매핑 — force 열
+#   1 → FriendlyForce, 2 → EnemyForce, 3 → 지형/랜드마크(개체 아님)
+#   0 → 관측 2건뿐, 미상. 데이터팀 확인 필요.
+#   ※ 매핑은 로더(csv2nt.py FORCE)에 있고 여기엔 어휘만 둔다.
+#     FriendlyForce·EnemyForce·NeutralForce 는 본 온톨로지 S1.1 에 이미 있다.
+#################################################################
+
+#################################################################
+# X5. 소스를 잃은 기존 용어 — 삭제하지 말고 보류 표시만
+#   CID 열이 없어져 아래 6개는 ver1.0 데이터로 채울 수 없다.
+#   재등장 가능성이 있으므로 본 온톨로지에서 지우지 않기를 권한다.
+#     bfstkg:cid, bfstkg:RecognitionLevel,
+#     bfstkg:RL_NoDetection / RL_Detected / RL_Classified /
+#     RL_Identified / RL_FullKnowledge
+#################################################################
+
+# rdfs:comment 가 아니라 skos:editorialNote 를 쓴다. 본 온톨로지에 이미
+# rdfs:comment 가 있어서 같은 술어로 또 달면 한 용어에 정의문이 두 개가 되고
+# 어느 쪽이 정본인지 알 수 없게 된다. 편집 메모는 별도 술어로 분리한다.
+bfstkg:cid skos:editorialNote
+    "[보류 2026-08-18] VR-Forces dataset ver1.0 에서 CID 열이 삭제되어 현재 데이터 소스 없음. 재등장 가능성이 있어 삭제하지 않는다."@ko .
+bfstkg:RecognitionLevel skos:editorialNote
+    "[보류 2026-08-18] CID 열 삭제로 인스턴스를 채울 소스 없음."@ko .
+
+#################################################################
+# X6. 확인이 필요한 사항 (데이터팀 질의 목록)
+#   1) fired_by 의 object 가 ver1.0 에선 항상 빈값이다. 본 온톨로지
+#      bfstkg:firedBy 는 "대상=확정 사수"로 정의돼 있으나 채울 값이 없다.
+#      → 사수 정보를 줄 수 있는가? 아니면 firedBy 를 술어 없는 표지로 볼 것인가.
+#   2) Wait-Duration 의 지속시간 값이 어느 열에도 없다.
+#      본 온톨로지 bfstkg:waitDuration(decimal)에 넣을 수가 없다.
+#   3) UAV 파일의 탄약 행(entity_type kind=2)은 tracking_id 가 비어 있다.
+#      ground_truth 는 채워져 있다. 센서가 탄약에 트랙을 안 물리는 게 맞는가?
+#      이름('M933HE 1')은 11분 간격으로 재사용되므로 트랙 키가 될 수 없다.
+#   4) [해결 2026-08-25] force=0 인 행 2건은 uuid="Waypoint 1", entity_type
+#      16:0:0:1:0:0:0 인 웨이포인트 마커였다(force 0 = 세력 없음).
+#      다만 그 2행의 subject 가 LOC_적북측집결지 로 붙어 있는데 좌표는 등재
+#      지점에서 3,422m 떨어져 있다. 이름 없는 웨이포인트에 근처 LOC 이름을
+#      갖다 붙인 후처리 흔적으로 보인다 — 9번과 함께 확인 필요.
+#   5) damage 는 0 과 3 만 관측된다. 척도의 정의(0~3? 0~4?)가 필요하다.
+#   6) [중요] tracking_id 가 관측자별 ID 가 아니라 전역 ID 로 보인다.
+#      UAV 4파일의 tracking_id 가 ground_truth 와 100% 겹치고, 같은 값은 어느
+#      관측자에서든 같은 uuid 를 가리킨다(471/471, 불일치 0). 본 온톨로지 S4.3 의
+#      "관측자가 부여한 트랙 식별자, 식별키 = (관측자 + trackingID)" 와 맞지 않는다.
+#      전역 ID 가 맞다면 관측자 간 개체정합이 ID 일치 검사로 끝나 연구 전제가 무너진다.
+#      → 현재 트랙 IRI 는 관측자별로 분리해 두고 trackingId 리터럴을 함께 남겼다.
+#        전역으로 확정되면 그래프 재생성 없이 리터럴 조인으로 묶을 수 있다.
+#   7) 밀리초 타임스탬프. 초 단위라 같은 초 안의 서로 다른 관측이 겹친다
+#      (같은 tracking_id·timestamp 인데 좌표가 다른 행 5.2만 쌍, 최대 50m).
+#      소수점 이하가 오면 근본 해결된다.
+#   8) ground_truth 에 17열이 완전히 같은 행이 52만 쌍 있다. export 아티팩트인가,
+#      실제 이중 샘플링인가? 판정 근거가 없어 현재는 전부 보존한다.
+#   9) [중요] 지형지물 스트림 좌표가 등재 좌표와 어긋난다. 12곳 중 5곳:
+#      동측능선 880m · 서측능선 758m · 적포병진지 610m · 목표A남측 490m ·
+#      적북측집결지 445m. 온톨로지 S5 = config/battlefield_layout.json 이고
+#      golden 점들은 VT MAK 정본 yewon_test.oob 와 소수점까지 일치하므로
+#      틀린 쪽은 ver1.0 스트림이다. ver1.0 에서 시나리오를 옮겼는가, 아니면
+#      LOC_* 이름을 붙이는 후처리가 잘못 매칭했는가?
+#      → 회신 전까지 representsPlace 를 위치 판단 근거로 쓰지 않는다.
+#################################################################
