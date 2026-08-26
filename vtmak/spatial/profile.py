@@ -19,7 +19,7 @@ from .thresholds import SPACING_BY_TYPE_GROUP
 
 
 def _dis_key(value: str) -> str:
-    """'1:1:222:1:4:0:0'과 '1 1 222 1 4 0 0'을 같은 키로 만든다."""
+    """'1:1:222:1:2:1:0'과 '1 1 222 1 2 1 0'을 같은 키로 만든다."""
     parts = [p for p in value.replace(":", " ").replace(",", " ").split() if p]
     return " ".join(parts)
 
@@ -55,9 +55,15 @@ class ProfileIndex:
 
         by_dis: dict[str, EntityProfile] = {}
         for entity_class in ranges.classes():
+            if not dis.known(entity_class):
+                raise ValueError(
+                    f"CLASS_JOIN_MISMATCH: {entity_class!r}가 weapon_ranges에는 "
+                    f"있는데 dis_catalog에 없다")
             code = dis.dis(entity_class)
             if code is None:
-                # DIS 미확정 클래스는 관측 CSV에서 만날 수 없다 — 건너뛴다.
+                # dis 열이 비어 있는 클래스다. 이름은 맞지만 DIS를 아직 확정 못 했다는
+                # 뜻이라 관측 CSV에서 만날 수 없다 — 건너뛴다. 이름이 안 맞는 경우와
+                # 구분해야 한다. 둘 다 None이 오지만 뒤쪽은 설정 결함이다.
                 continue
             if not class_map.known(entity_class):
                 raise ValueError(

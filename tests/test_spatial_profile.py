@@ -95,6 +95,26 @@ def test_rejects_an_unknown_type_group(tmp_path):
         ProfileIndex.load(tmp_path)
 
 
+def test_rejects_a_class_missing_from_the_dis_catalog(tmp_path):
+    (tmp_path / "dis_catalog.csv").write_text(
+        "entity_class,dis,domain,source_note\n"
+        "US Army M4,3 1 225 1 41 1 0,land,\n", encoding="utf-8")
+    (tmp_path / "entity_class_map.csv").write_text(CLASS_MAP, encoding="utf-8")
+    (tmp_path / "weapon_ranges.csv").write_text(RANGES, encoding="utf-8")
+    with pytest.raises(ValueError, match="CLASS_JOIN_MISMATCH"):
+        ProfileIndex.load(tmp_path)
+
+
+def test_skips_a_class_whose_dis_is_not_yet_assigned(tmp_path):
+    (tmp_path / "dis_catalog.csv").write_text(
+        DIS.replace("T 72 MBT,1 1 222 1 2 1 0", "T 72 MBT,"), encoding="utf-8")
+    (tmp_path / "entity_class_map.csv").write_text(CLASS_MAP, encoding="utf-8")
+    (tmp_path / "weapon_ranges.csv").write_text(RANGES, encoding="utf-8")
+    index = ProfileIndex.load(tmp_path)          # 예외 없이 통과해야 한다
+    assert index.of("1:1:222:1:2:1:0") is None
+    assert index.of("1:1:225:1:1:3:0") is not None  # US Army M4는 그대로 조회된다
+
+
 def test_uses_the_real_config_directory():
     """실제 config가 세 파일 사이에서 어긋나지 않는지 확인한다."""
     from vtmak.paths import CONFIG
