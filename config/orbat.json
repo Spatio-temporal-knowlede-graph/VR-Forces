@@ -1,0 +1,66 @@
+{
+  "note": "원문 1,294줄에 소대·중대·대대 언급이 0건이라 편제는 추출이 아니라 저작이다. doctrine과 simulation_abstraction을 섞지 말 것 — 축약 정원을 교리 정원으로 읽히게 두면 논문에서 근거 문제가 된다.",
+
+  "doctrine": {
+    "source": "ATP 7-100.2, Fig 3-9~3-11",
+    "platoons_per_company": 3,
+    "squads_per_platoon": 3,
+    "basic_unit_of_action": "battalion",
+    "apply_split_to": ["보병"],
+    "apply_split_note": "ATP의 '중대=3소대'는 보병중대에 대한 서술이다. 화력중대(포대)·수송중대·군수중대에까지 3소대 규칙을 강제하는 것은 우리 모델링 선택이 아니라 과적용이라 보병에만 건다."
+  },
+
+  "simulation_abstraction": {
+    "note": "정원이 아니라 축약 강도(abstraction strength)다. 교리가 규정한 값이 아니라 이 시나리오 객체 수(328)에 맞춘 값이고, 객체 수가 바뀌면 여기만 조정한다.",
+    "platoon_capacity": {
+      "보병": 20, "전차": 4, "기계화수송": 4, "화력": 2,
+      "군수": 4, "대전차": 20, "정찰": 20, "방공": 3, "본부": 20
+    },
+    "platoon_capacity_override": {
+      "휴대 대공화기조": 20
+    },
+    "platoon_capacity_override_note": "MANPADS(SA7 15기)는 보병이 휴대한다. 대공화기(ZPU) 3문 기준을 그대로 적용하면 15기가 5개 소대가 되어 방공중대가 생긴다."
+  },
+
+  "company_functions": ["보병", "전차", "기계화수송", "화력", "군수"],
+  "company_split_by_location": ["전차"],
+  "company_split_by_location_note": "전차는 능선·접근로별로 따로 배치되어 한 중대로 묶으면 2km 넘게 흩어진다.",
+
+  "function_code": {
+    "보병": "INF", "전차": "ARM", "기계화수송": "MEC", "화력": "FIRE",
+    "군수": "LOG", "대전차": "AT", "정찰": "REC", "방공": "AD", "본부": "HQ"
+  },
+
+  "function_of_role": {
+    "방어 보병": "보병", "제1제대 보병": "보병",
+    "동측 전차": "전차", "서측 전차": "전차",
+    "전방 전차": "전차", "예비 전차": "전차",
+    "장갑 수송차": "기계화수송", "궤도 수송차": "기계화수송",
+    "병력수송 장갑차": "기계화수송", "화력지원 장갑차": "기계화수송",
+    "곡사포": "화력", "박격포": "화력", "장거리 자주포": "화력",
+    "자주포": "화력", "로켓화력 대체 객체": "화력",
+    "탄약 보급차": "군수", "포탄 보급차": "군수", "병력 수송 트럭": "군수",
+    "대전차팀": "대전차", "근접화력팀": "대전차",
+    "감시·저격조": "정찰", "정찰·저격조": "정찰",
+    "대공화기": "방공", "전방 대공화기": "방공", "휴대 대공화기조": "방공",
+    "지휘소 경계 보병": "본부"
+  },
+
+  "faction_code": { "BLUE": "FR", "RED": "EN" },
+  "faction_name": { "BLUE": "아군", "RED": "적군" },
+  "battalion_name": { "BLUE": "아군 전술대대", "RED": "적군 전술대대" },
+
+  "task_organization_note": "원문에 근거가 없어 저작한 값이다. 관측에서 파생된 관계와 섞이지 않도록 파생 레이어가 layer 필드로 구분한다.",
+  "supports": [
+    ["UNIT-FR-FIRE-CO1", "UNIT-FR-INF-CO1"],
+    ["UNIT-FR-AT-PL1", "UNIT-FR-INF-CO1"],
+    ["UNIT-FR-LOG-CO1", "UNIT-FR-BN"],
+    ["UNIT-EN-FIRE-CO1", "UNIT-EN-INF-CO1"],
+    ["UNIT-EN-LOG-CO1", "UNIT-EN-BN"]
+  ],
+  "reinforces": [
+    ["UNIT-FR-ARM-CO2", "UNIT-FR-INF-CO1"],
+    ["UNIT-EN-ARM-CO2", "UNIT-EN-INF-CO1"],
+    ["UNIT-EN-ARM-CO1", "UNIT-EN-INF-CO2"]
+  ]
+}
