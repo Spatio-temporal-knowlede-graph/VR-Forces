@@ -9,7 +9,7 @@ from vtmak.spatial.profile import ProfileIndex
 
 DIS = """entity_class,dis,domain,source_note
 T 72 MBT,1 1 222 1 2 1 0,land,하이픈 없는 표기
-US Army M4,1 1 225 1 1 3 0,land,
+US Army M4,3 1 225 1 41 1 0,land,
 CAESAR SP Howitzer,1 1 71 4 0 0 0,land,
 M35 Truck,1 1 225 2 3 0 0,land,무장 없음
 """
@@ -112,7 +112,7 @@ def test_skips_a_class_whose_dis_is_not_yet_assigned(tmp_path):
     (tmp_path / "weapon_ranges.csv").write_text(RANGES, encoding="utf-8")
     index = ProfileIndex.load(tmp_path)          # 예외 없이 통과해야 한다
     assert index.of("1:1:222:1:2:1:0") is None
-    assert index.of("1:1:225:1:1:3:0") is not None  # US Army M4는 그대로 조회된다
+    assert index.of("3:1:225:1:41:1:0") is not None  # US Army M4는 그대로 조회된다
 
 
 def test_uses_the_real_config_directory():
