@@ -8,7 +8,7 @@ import pytest
 from vtmak.spatial.profile import ProfileIndex
 
 DIS = """entity_class,dis,domain,source_note
-T 72 MBT,1 1 222 1 4 0 0,land,하이픈 없는 표기
+T 72 MBT,1 1 222 1 2 1 0,land,하이픈 없는 표기
 US Army M4,1 1 225 1 1 3 0,land,
 CAESAR SP Howitzer,1 1 71 4 0 0 0,land,
 M35 Truck,1 1 225 2 3 0 0,land,무장 없음
@@ -36,7 +36,7 @@ def index(tmp_path):
 
 
 def test_joins_across_the_hyphen_mismatch(index):
-    p = index.of("1:1:222:1:4:0:0")
+    p = index.of("1:1:222:1:2:1:0")
     assert p is not None
     assert p.entity_class == "T-72 MBT"
     assert p.type_group == "차량/장갑차 - M2HB 계열"
@@ -44,7 +44,7 @@ def test_joins_across_the_hyphen_mismatch(index):
 
 
 def test_reads_direct_range(index):
-    p = index.of("1:1:222:1:4:0:0")
+    p = index.of("1:1:222:1:2:1:0")
     assert p.direct.min_m == 0.0
     assert p.direct.max_m == 2500.0
     assert p.indirect is None
@@ -65,7 +65,7 @@ def test_max_range_is_none_for_an_unarmed_class(index):
 
 
 def test_accepts_both_colon_and_space_separated_dis(index):
-    assert index.of("1 1 222 1 4 0 0") == index.of("1:1:222:1:4:0:0")
+    assert index.of("1 1 222 1 2 1 0") == index.of("1:1:222:1:2:1:0")
 
 
 def test_unknown_entity_type_returns_none(index):
@@ -99,6 +99,7 @@ def test_uses_the_real_config_directory():
     """실제 config가 세 파일 사이에서 어긋나지 않는지 확인한다."""
     from vtmak.paths import CONFIG
     index = ProfileIndex.load(CONFIG)
-    p = index.of("1:1:222:1:4:0:0")  # T-72 MBT
+    p = index.of("1:1:222:1:2:1:0")  # T-72 MBT
     assert p is not None
     assert p.spacing_m == 10.0
+    assert p.entity_class == "T-72 MBT"
