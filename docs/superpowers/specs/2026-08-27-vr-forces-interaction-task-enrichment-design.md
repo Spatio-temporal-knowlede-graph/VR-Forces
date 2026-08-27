@@ -10,7 +10,7 @@
 2. 직접사격과 제압사격을 한 교전 안의 연속된 두 단계로 유지한다.
 3. task가 적은 기존 무장 객체를 신규 직접사격의 표적으로 활용한다.
 4. GT에서 고유 `Fire-Weapon` 및 `Provide-Suppressive-Fire-Loc` 관계를 충분히 확보한다.
-5. 관측 관계와 계획·파생 관계의 출처를 구분한다.
+5. 사격 GT에는 시뮬레이터에서 직접 보이는 task 관계만 저장한다.
 
 행 수를 늘리는 것 자체는 성공으로 보지 않는다. 주 성공 지표는 서로 다른 공격자와 표적이 만드는 **고유 SPO 수**다.
 
@@ -27,7 +27,7 @@
 - `follow-entity`는 실행되면 계속 유지되어 뒤에 배치된 사격·엄폐 task가 도달 불가능해질 수 있다.
 - PLN에는 절대 시각 트리거가 없고 객체별 task가 즉시 순차 실행되므로, 원문 사건 시각과 실제 task 시작 시각이 크게 어긋날 수 있다.
 
-부대·편제 기반 파생 관계는 이미 제거됐다. 현재 `vtmak/derive/`는 객체·이벤트 수준의 R1–R4·R7만 유지하며, 옛 `partOf`, `supports`, `reinforces`, `unitSuppressed`, 부대 수준 `movesToward`, `occupies`, `firesUpon`은 생성하지 않는다. 이번 변경은 이 상태를 유지하는 회귀 검증만 추가한다.
+부대·편제 기반 파생 관계는 이미 제거됐다. 현재 `vtmak/derive/`는 객체·이벤트 수준의 R1–R4·R7만 유지하며, 옛 `partOf`, `supports`, `reinforces`, `unitSuppressed`, 부대 수준 `movesToward`, `occupies`, `firesUpon`은 생성하지 않는다. 이번 변경은 이 상태를 유지하는 회귀 검증을 추가하고, 피격과 상태 전환을 합성하던 R1 `suppresses`는 최종 관계 산출에서 제외한다.
 
 ## 3. 범위
 
@@ -38,7 +38,7 @@
 - 저-task 무장 객체를 표적으로 하는 신규 교전 슬롯 20~30건 생성
 - 종료되지 않는 `follow-entity` 뒤에 상호작용 task가 놓이지 않도록 큐 재작성
 - `find_firing_position` 및 `find_cover`을 사전 계산 좌표로 향하는 `move-to` 계열 task로 대체
-- 제압사격 술어 정규화와 교전 표적 연결
+- 제압사격 술어 정규화
 - 정적 감사 보고서와 시뮬레이션 후 GT 평가 항목 추가
 
 ### 제외
@@ -49,6 +49,7 @@
 - VR-Forces 런타임 플러그인이나 새로운 트리거 시스템 도입
 - 공간 관계 확장 모듈 변경
 - 원문 이벤트 정본 `build/events/battle.jsonl`에 보강 사건을 원문 사건인 것처럼 삽입
+- GT 또는 최종 STKG에 객체 간 `suppresses` 관계 생성
 
 UAV CSV는 이번 변경으로 인해 우연히 달라질 수 있으나 합격 기준에 포함하지 않는다. 고정 UAV 계획과 관련 설정은 바이트 수준 회귀 검증 대상으로 둔다.
 
@@ -184,19 +185,15 @@ executed_task = move-to
 
 이를 위해 `vtmak/stkg/rewrite.py::_NAME`에 `predicate.py`가 반환하는 제압사격 내부 이름의 정규형 매핑을 추가한다. 좌표 목적어는 기존 `snap` 경로를 사용하여 가능한 경우 `LOC_*` 이름으로 바꾸고, 불가능하면 좌표 문자열을 유지한다.
 
-### 9.2 객체 간 제압 관계
+두 술어는 모두 시뮬레이터가 실행 중인 task를 직접 보고한 값이다. `Fire-Weapon`은 객체 대 객체 관계이고, `Provide-Suppressive-Fire-Loc`은 객체 대 위치 관계다. `FFE-on-Location`과 제압사격은 모두 위치 대상 사격이지만 간접 화력타격과 직접 제압사격이라는 실행 의미가 다르므로 합치지 않는다. 조회 계층에서만 둘을 `Fires-At-Location`의 하위 유형으로 묶고, GT에 `Fires-At-Location` 중복 행을 추가하지 않는다.
 
-위치 기반 제압 task 자체에는 표적 객체 UUID가 없으므로 관측 행만으로 `(공격자, suppresses, 표적 객체)`를 복원할 수 없다. `slots.jsonl`의 `slot_id`, 공격자, 예정 시간창, 표적 ID를 사용하여 관측된 제압사격 행을 슬롯과 매칭한다.
+이번 보강 외의 기존 관측 술어는 그대로 유지한다. “두 관계만 저장”은 이번 사격 보강이 새로 다루는 관계가 이 둘뿐이라는 뜻이며, 이동·대기·FFE 같은 기존 관측 술어를 삭제한다는 뜻이 아니다.
 
-매칭에 성공한 경우에만 다음 파생 관계를 낸다.
+### 9.2 `suppresses`를 저장하지 않는 이유
 
-```text
-(공격자, suppresses, 표적 객체)
-```
+위치 기반 제압 task 자체에는 표적 객체 UUID가 없다. 또한 제압사격을 수행했다는 사실만으로 특정 객체가 실제로 제압됐다고 단정할 수 없다. 슬롯의 표적 ID를 붙이거나 피격과 상태 변화를 조인하려면 관측 이외의 연결 규칙이 필요하므로, 이는 “눈에 직접 보이는 이벤트 중심 GT” 원칙에 맞지 않는다.
 
-이 관계에는 `layer=derived`, 별도 rule ID, 슬롯 ID와 관측 행 식별자를 provenance로 기록한다. 계획만 있고 관측되지 않은 슬롯에서는 `suppresses`를 생성하지 않는다. 시간창에서 슬롯이 둘 이상 겹쳐 유일하게 매칭할 수 없으면 관계를 만들지 않고 미매칭 보고서에 남긴다.
-
-기존 원문 기반 R1 `suppresses`와 새 실행 기반 관계는 provenance와 rule ID로 구분한다. 같은 사실이 두 경로에서 확인되면 결과 집계에서는 고유 SPO와 근거 수를 따로 센다.
+따라서 슬롯 기반 `suppresses` 매칭 모듈은 만들지 않고, 기존 원문 기반 R1 `suppresses`도 최종 관계 산출에서 제외한다. 표적의 제압 상태를 직접 저장할 필요가 생기면 `(표적, Has-State, Suppressed)`처럼 객체 자신의 상태로 표현하되, 공격자와의 인과관계로 바꾸는 작업은 별도 설계로 다룬다. 이번 구현에는 새 `Has-State` 술어도 추가하지 않는다.
 
 ## 10. 부대·편제 관계
 
@@ -208,7 +205,7 @@ executed_task = move-to
 - `unitSuppressed`
 - 부대가 주어인 `movesToward`, `occupies`, `firesUpon`
 
-현재 제거 상태를 회귀 테스트로 고정한다. 객체 수준 `suppresses`, `damages`, 지역 대상 `firesUpon`, 사건 수준 `causes`, `precedes`는 유지한다.
+현재 제거 상태를 회귀 테스트로 고정한다. 객체 수준 `damages`, 지역 대상 `firesUpon`, 사건 수준 `causes`, `precedes`는 유지한다. 객체 간 `suppresses`는 부대·편제 관계는 아니지만 관측 전용 GT 원칙에 따라 최종 산출에서 제외한다.
 
 ## 11. 설정과 산출물
 
@@ -237,7 +234,6 @@ slot_spacing_s = 15
 - `build/engagements/audit.csv`: 후보 제외, task 도달 불가, 사거리 실패 등
 - 기존 `build/scnx/battle.scnx`: 변경된 실행 시나리오
 - 시뮬레이션 후 기존 GT CSV: 두 관측 술어 포함
-- 파생 관계 산출물: 관측과 슬롯이 유일하게 매칭된 객체 간 `suppresses`
 
 ## 12. 오류 처리
 
@@ -255,8 +251,6 @@ slot_spacing_s = 15
 
 후보 하나가 사거리·생존·스케줄 조건을 만족하지 못하는 것은 감사표에 사유를 남기고 다음 후보를 시도한다. 최소 목표에 도달할 수 없을 때만 전체 컴파일을 실패시킨다.
 
-관측 후 슬롯 매칭 실패는 시나리오 컴파일 실패가 아니다. 실행 결과 품질 문제로 보고하고 해당 파생 관계만 생성하지 않는다.
-
 ## 13. 검증
 
 ### 단위 테스트
@@ -268,7 +262,7 @@ slot_spacing_s = 15
 - 무기한 follow 뒤 후속 task 금지
 - `find_firing_position`과 `find_cover`의 이동 task 변환
 - `Provide-Suppressive-Fire-Loc` 정규화와 좌표 snap
-- 슬롯 시간창 매칭의 성공·미매칭·모호성 처리
+- GT와 최종 관계 산출물에 `suppresses`가 나타나지 않음
 - 부대·편제 술어가 파생 관계에 다시 나타나지 않음
 
 ### 통합 테스트
@@ -302,10 +296,10 @@ slot_spacing_s = 15
 - `config/pattern_map.csv` 및 `config/task_kinds.csv`: 실패 task를 이동 의도로 내리는 매핑
 - `vtmak/scnx/audit.py`: 슬롯·도달 가능성 감사
 - `vtmak/stkg/rewrite.py`: 제압사격 정규형 매핑
-- 시뮬레이션 후 처리 경로: 슬롯과 관측 시간창 매칭
+- `config/derive_rules.csv`와 `vtmak/derive/`: R1 `suppresses` 최종 산출 제외
 - 관련 `tests/`: 단위·통합·회귀 검증
 
-실제 구현 시 기존 모듈의 책임을 유지한다. 사건 해석은 `spec`, 슬롯 선택은 `engagements`, PLN 문자열 생성은 `plan`, 관측 정규화는 `stkg`, 관계 합성은 `derive` 또는 별도 실행관계 조인 모듈에 둔다.
+실제 구현 시 기존 모듈의 책임을 유지한다. 사건 해석은 `spec`, 슬롯 선택은 `engagements`, PLN 문자열 생성은 `plan`, 관측 정규화는 `stkg`, 기존 관계 합성은 `derive`에 둔다. 실행 슬롯과 관측을 조인하는 새 모듈은 만들지 않는다.
 
 ## 15. 구현 순서
 
@@ -314,6 +308,6 @@ slot_spacing_s = 15
 3. 신규 20~30개 저-task 표적 교전 생성
 4. follow 및 실패 `find_*` task의 도달 가능성 개선
 5. 제압사격 GT 정규화
-6. 관측 슬롯 매칭과 객체 간 `suppresses`
+6. 기존 R1 `suppresses` 최종 산출 제외
 7. 정적 감사와 전체 회귀 검증
 8. VR-Forces 실행, GT 재수집, 합격 지표 평가
