@@ -1,4 +1,6 @@
 """후보 쌍 — 짧은 거리와 포병 사거리는 탐색 반경이 두 자릿수 차이라 경로를 나눈다."""
+import math
+
 import pytest
 
 from vtmak.geometry import Coord, deg_scales, ground_distance
@@ -43,12 +45,22 @@ class TestLocalPairs:
 
     def test_yields_each_unordered_pair_once(self):
         given = [_at("A"), _at("B", east_m=1.0), _at("C", east_m=2.0)]
-        names = {tuple(sorted((a.subject, b.subject))) for a, b, _ in local_pairs(given, 100.0)}
+        pairs = list(local_pairs(given, 100.0))
+        assert len(pairs) == 3
+        names = {tuple(sorted((a.subject, b.subject))) for a, b, _ in pairs}
         assert names == {("A", "B"), ("A", "C"), ("B", "C")}
 
     def test_finds_pairs_straddling_a_grid_cell_boundary(self):
-        given = [_at("A", east_m=99.0), _at("B", east_m=101.0)]
-        assert len(list(local_pairs(given, 100.0))) == 1
+        # 셀 폭은 반경과 같다. LON이 자기 셀 안에서 어디 있는지 모르므로 다음 경계까지의
+        # 거리를 직접 구해, 그 경계를 사이에 두고 40m씩 떨어뜨린다. 두 객체는 서로 다른
+        # 셀에 있으면서 반경 안에 있다 — 3×3 이웃 훑기가 빠지면 이 쌍을 놓친다.
+        radius = 100.0
+        d_lon = radius / LON_M
+        to_boundary_m = ((math.floor(LON / d_lon) + 1) * d_lon - LON) * LON_M
+        a = _at("A", east_m=to_boundary_m - 40.0)
+        b = _at("B", east_m=to_boundary_m + 40.0)
+        assert math.floor(a.coord.lon / d_lon) != math.floor(b.coord.lon / d_lon)
+        assert len(list(local_pairs([a, b], radius))) == 1
 
     def test_handles_identical_coordinates(self):
         pairs = list(local_pairs([_at("A"), _at("B")], 100.0))
