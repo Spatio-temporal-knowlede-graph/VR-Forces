@@ -10,13 +10,17 @@ import pytest
 
 from vtmak.derive.config import DeriveRules
 from vtmak.derive.events import EventIndex
-from vtmak.derive.relations import (r1r2_hit_state, r3_direct_fire,
+from vtmak.derive.relations import (r2_damage, r3_direct_fire,
                                     r4_indirect_fire, r7_precedes)
 from vtmak.parser import Event
 
 ROOT = Path(__file__).resolve().parents[1]
 EVENTS = ROOT / "build" / "events" / "battle.jsonl"
 CFG = ROOT / "config"
+
+# 설계 §10이 '제거 상태를 회귀 테스트로 고정한다'고 못박은 술어들.
+REMOVED_UNIT_PREDICATES = {"partOf", "supports", "reinforces",
+                           "unitSuppressed"}
 
 
 @pytest.fixture(scope="module")
@@ -35,30 +39,32 @@ def ev(event_id, time_s, predicate, **kw):
                  predicate=predicate, template=kw.pop("template", predicate), **kw)
 
 
-# ── R1·R2 suppresses/damages(피격 → 같은 줄의 상태 전이) ─────────────────
-def test_r1r2_consume_every_hit(idx, rules):
-    """계약은 51+26=77이라는 합이 아니라 hitBy 77건 전량 소비다."""
-    res = r1r2_hit_state(idx, rules)
-    assert not res.unmatched
-    assert len(res.relations) == len(idx.by_predicate("hitBy")) == 77
-    kinds = Counter(r.predicate for r in res.relations)
-    assert kinds == {"suppresses": 51, "damages": 26}
+# ── R2 damages(피격 → 같은 줄의 손상 전이) ─────────────────────────────
+def test_damage_rule_emits_only_observed_damage_effect(idx, rules):
+    """R2만 남는다 — suppresses는 제거됐고 미매칭도 없다.
+
+    제압 전이 피격 51건은 미매칭이 아니라 의도적으로 안 본다(설계 §9.2).
+    """
+    result = r2_damage(idx, rules)
+    assert not result.unmatched
+    assert len(result.relations) == 26
+    assert {r.rule_id for r in result.relations} == {"R2"}
+    assert {r.predicate for r in result.relations} == {"damages"}
 
 
-def test_r1r2_run_from_attacker_to_victim(idx, rules):
+def test_r2_runs_from_attacker_to_victim(idx, rules):
     """쌍은 (source_obj, actor)다 — 피격 라인의 actor는 맞은 쪽이다."""
     by_id = {e.event_id: e for e in idx.events}
-    ids = {"suppresses": "R1", "damages": "R2"}
-    for r in r1r2_hit_state(idx, rules).relations:
+    for r in r2_damage(idx, rules).relations:
         hit, change = (by_id[p] for p in r.provenance)
-        assert r.rule_id == ids[r.predicate]
+        assert r.rule_id == "R2"
         assert (hit.predicate, change.template) == ("hitBy", "stateChange")
         assert (r.subject, r.object) == (hit.source_obj, hit.actor)
         assert change.actor == hit.actor and change.line_no == hit.line_no
         assert r.provenance == (hit.event_id, change.event_id)
 
 
-def test_r1r2_need_a_state_change_not_a_hold():
+def test_r2_needs_a_state_change_not_a_hold():
     """같은 줄에 stateHold가 있어도 관계는 안 생긴다.
 
     현 데이터는 hold가 전부 다른 줄에 있어 우연히 안전하다. 그건 데이터의
@@ -67,33 +73,51 @@ def test_r1r2_need_a_state_change_not_a_hold():
     idx = EventIndex([
         ev("H1", 10, "hitBy", actor="V", source_obj="A"),
         ev("S1", 10, "stateChangedTo", actor="V", template="stateHold",
-           state_from="", state_to="제압"),
+           state_from="", state_to="손상"),
     ])
-    res = r1r2_hit_state(idx, DeriveRules.load(CFG / "derive_rules.csv"))
+    res = r2_damage(idx, DeriveRules.load(CFG / "derive_rules.csv"))
     assert res.relations == ()
-    assert res.unmatched == ("H1",)
+    assert res.unmatched == ()
 
 
-def test_r1r2_ignore_another_objects_state_change_on_the_same_line(rules):
+def test_r2_ignore_another_objects_state_change_on_the_same_line(rules):
     """같은 줄이어도 주체가 다르면 그 피격의 결과가 아니다."""
     idx = EventIndex([
         ev("H1", 10, "hitBy", actor="V", source_obj="A"),
         ev("S1", 10, "stateChangedTo", actor="OTHER", template="stateChange",
+           state_from="기동 또는 사격 가능", state_to="손상"),
+    ])
+    res = r2_damage(idx, rules)
+    assert res.relations == ()
+    assert res.unmatched == ()
+
+
+def test_r2_deliberately_ignores_suppression_state_hits(rules):
+    """제압 전이 피격은 미매칭이 아니라 의도적으로 안 본다(설계 §9.2).
+
+    표에서 R1(제압→suppresses) 행을 지웠으니 '제압'은 이제 표에 없는
+    상태다. damages로도, 미매칭으로도 나오지 않고 그냥 조용히 빠진다.
+    """
+    idx = EventIndex([
+        ev("H1", 10, "hitBy", actor="V", source_obj="A"),
+        ev("S1", 10, "stateChangedTo", actor="V", template="stateChange",
            state_from="기동 또는 사격 가능", state_to="제압"),
     ])
-    res = r1r2_hit_state(idx, rules)
+    res = r2_damage(idx, rules)
     assert res.relations == ()
-    assert res.unmatched == ("H1",)
+    assert res.unmatched == ()
 
 
-def test_r1r2_only_map_states_the_table_knows(rules):
-    """표에 없는 전이는 조용히 다른 관계가 되지 않고 미매칭으로 남는다."""
+def test_r2_only_emits_states_the_table_knows(rules):
+    """표에 없는 전이는 조용히 다른 관계가 되지 않는다."""
     idx = EventIndex([
         ev("H1", 10, "hitBy", actor="V", source_obj="A"),
         ev("S1", 10, "stateChangedTo", actor="V", template="stateChange",
            state_from="기동 또는 사격 가능", state_to="표에 없는 상태"),
     ])
-    assert r1r2_hit_state(idx, rules).unmatched == ("H1",)
+    res = r2_damage(idx, rules)
+    assert res.relations == ()
+    assert res.unmatched == ()
 
 
 # ── R3 causes(직접사격 → 피격) ────────────────────────────────────────────
@@ -238,7 +262,7 @@ def test_r7_skips_events_without_an_actor(idx, rules):
 
 # ── 규칙 간 정합성 ───────────────────────────────────────────────────────
 def test_every_hit_state_pair_has_exactly_one_direct_fire_cause(idx, rules):
-    """개체쌍 레이어(R1·R2)와 이벤트쌍 레이어(R3)를 서로 봉인한다.
+    """개체쌍 레이어(R2)와 이벤트쌍 레이어(R3)를 서로 봉인한다.
 
     같은 피격을 두 레이어가 각자 읽으므로, 한쪽 규칙이 조용히 어긋나면 두
     레이어의 (공격자, 피격자) 집합이 갈라진다. 여기서 걸린다.
@@ -248,16 +272,38 @@ def test_every_hit_state_pair_has_exactly_one_direct_fire_cause(idx, rules):
     for r in r3_direct_fire(idx).relations:
         shot = by_id[r.subject]
         fired[(shot.actor, shot.target)] += 1
-    for r in r1r2_hit_state(idx, rules).relations:
+    for r in r2_damage(idx, rules).relations:
         assert fired[(r.subject, r.object)] == 1, (r.subject, r.object)
 
 
 # ── 공통 계약 ────────────────────────────────────────────────────────────
 def _run_all(index, rules):
-    return (r1r2_hit_state(index, rules).relations
+    return (r2_damage(index, rules).relations
             + r3_direct_fire(index).relations
             + r4_indirect_fire(index, rules).relations
             + r7_precedes(index, rules).relations)
+
+
+def test_final_derived_relations_never_emit_suppresses(idx, rules):
+    """R1이 빠졌으니 최종 산출 어디에도 suppresses는 없다."""
+    relations = _run_all(idx, rules)
+    assert "suppresses" not in {r.predicate for r in relations}
+
+
+def test_unit_and_formation_predicates_stay_removed(idx, rules):
+    """설계 §10 — 부대·편제 술어 제거 상태를 회귀 테스트로 고정한다.
+
+    옛 R5·R6·R8~R12는 UNIT-* 접두사가 붙은 부대 id를 주어로 삼았다
+    (config/roster.json·2026-08-17 편제 설계 참고). 현 산출은 R2·R3·R4·R7
+    뿐이고 전부 battle.jsonl의 객체·이벤트 id만 주어로 쓴다 — 부대 id는
+    애초에 이 코드가 아는 값이 아니다.
+    """
+    relations = _run_all(idx, rules)
+    assert REMOVED_UNIT_PREDICATES.isdisjoint({r.predicate
+                                               for r in relations})
+    # 부대가 주어인 movesToward·occupies·firesUpon도 생성하지 않는다.
+    # firesUpon은 지역 대상만 남는다 — 주어가 객체인지로 판별한다.
+    assert all(not r.subject.startswith("UNIT-") for r in relations)
 
 
 def test_derive_is_byte_stable_across_runs(rules):
@@ -286,7 +332,7 @@ def test_sources_and_sinks_are_consumed_in_time_order(idx):
 
 
 @pytest.mark.parametrize("rule,expected", [
-    ("r1r2", {"R1", "R2"}), ("r3", {"R3"}), ("r4", {"R4"}), ("r7", {"R7"})])
+    ("r2", {"R2"}), ("r3", {"R3"}), ("r4", {"R4"}), ("r7", {"R7"})])
 def test_every_relation_carries_layer_rule_and_provenance(idx, rules,
                                                           rule, expected):
     """규칙마다 layer·rule_id·provenance 셋을 다 달고 나오는지 본다.
@@ -295,7 +341,7 @@ def test_every_relation_carries_layer_rule_and_provenance(idx, rules,
     `set(r.provenance) <= known`에서 바로 걸린다 — 원문 문장까지 되짚는 길이
     끊긴 것을 조용히 넘기지 않는다.
     """
-    res = {"r1r2": lambda: r1r2_hit_state(idx, rules),
+    res = {"r2": lambda: r2_damage(idx, rules),
            "r3": lambda: r3_direct_fire(idx),
            "r4": lambda: r4_indirect_fire(idx, rules),
            "r7": lambda: r7_precedes(idx, rules)}[rule]()

@@ -57,31 +57,26 @@ def _match(source: Event, pool: list[Event], used: set[str],
     return min(live, key=lambda e: (e.time_s - source.time_s, e.event_id))
 
 
-def r1r2_hit_state(index: EventIndex, rules) -> RuleResult:
-    """suppresses/damages(공격자, 피격자) — 피격과 **같은 줄**의 상태 전이.
+def r2_damage(index: EventIndex, rules) -> RuleResult:
+    """피격 + 같은 줄의 손상 전이 → damages.
 
-    조인은 세 조건이 전부 맞아야 한다: 같은 line_no · 같은 actor(맞은 쪽) ·
-    template=="stateChange". 앞의 둘만 걸면 stateHold가 같은 줄에 오는 순간
-    '유지'가 '전이'로 읽힌다. 현 데이터는 hold가 전부 다른 줄에 있어 우연히
-    안전하지만 그건 데이터의 사실이지 규칙의 계약이 아니다.
-
-    어떤 상태가 어떤 관계·어떤 rule_id가 되는지는 derive_rules.csv가 정한다.
-    표에 없는 전이는 조용히 다른 관계가 되지 않고 미매칭으로 남는다.
+    옛 r1r2_hit_state는 제압 전이도 받아 suppresses를 만들었다. 제압사격을
+    했다는 사실만으로 특정 객체가 실제로 제압됐다고 단정할 수 없고, 위치
+    기반 제압 task에는 표적 UUID조차 없다 — 관측 전용 GT 원칙에서 벗어난다
+    (설계 §9.2). 제압 전이 피격은 미매칭이 아니라 '의도적으로 안 본다'.
     """
     states = rules.hit_states()
-    rels, unmatched = [], []
+    rels = []
     for hit in index.by_predicate("hitBy"):
         change = next(
             (e for e in index.by_line(hit.line_no)
-             if e.template == "stateChange" and e.actor == hit.actor
-             and e.state_to in states), None)
-        if change is None:
-            unmatched.append(hit.event_id)
+             if e.template == "stateChange" and e.actor == hit.actor), None)
+        if change is None or change.state_to not in states:
             continue
         rule_id, predicate = states[change.state_to]
         rels.append(Relation(rule_id, predicate, hit.source_obj, hit.actor,
                              (hit.event_id, change.event_id)))
-    return RuleResult(tuple(rels), tuple(unmatched))
+    return RuleResult(tuple(rels), ())
 
 
 def r3_direct_fire(index: EventIndex) -> RuleResult:

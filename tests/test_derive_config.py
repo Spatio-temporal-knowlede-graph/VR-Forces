@@ -1,4 +1,5 @@
 """derive_rules.csv — 규칙의 데이터 매핑은 코드가 아니라 이 표에 있다."""
+import csv
 from pathlib import Path
 
 import pytest
@@ -15,13 +16,28 @@ def rules():
 
 
 def test_hit_states_map_a_state_to_a_rule_and_relation(rules):
-    """'제압'이 suppresses가 되는 근거는 코드가 아니라 표다.
+    """'손상'이 damages가 되는 근거는 코드가 아니라 표다.
 
-    rule_id도 표에서 온다. 관계 이름만 넘기면 파생 관계가 R1인지 R2인지를
+    rule_id도 표에서 온다. 관계 이름만 넘기면 파생 관계가 무슨 규칙인지를
     코드가 다시 정해야 하고, 그 순간 표 밖에 두 번째 정본이 생긴다.
+
+    옛 '제압'→R1·suppresses 매핑은 2026-08-27에 표에서 지웠다(설계 §9.2) —
+    남은 hit_state는 손상 하나뿐이다.
     """
-    assert rules.hit_states() == {"제압": ("R1", "suppresses"),
-                                  "손상": ("R2", "damages")}
+    assert rules.hit_states() == {"손상": ("R2", "damages")}
+
+
+def test_derive_rules_config_has_no_suppression_mapping():
+    """R1 행과 suppresses 값이 표 어디에도 남지 않았는지 원문으로 확인한다.
+
+    DeriveRules는 kind별로 접은 뷰(hit_states/area_state/flag)만 노출하고
+    행 자체를 보관하지 않는다 — 'R1이라는 rule_id가 표에 아예 없다'는
+    주장은 그 뷰로는 증명이 안 된다. 그래서 CSV를 직접 읽는다.
+    """
+    with open(CFG / "derive_rules.csv", encoding="utf-8-sig", newline="") as f:
+        rows = list(csv.DictReader(f))
+    assert "R1" not in {r["rule_id"].strip() for r in rows}
+    assert "suppresses" not in {r["value"].strip() for r in rows}
 
 
 def test_area_state_marks_the_indirect_fire_impact(rules):

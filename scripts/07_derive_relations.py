@@ -21,7 +21,7 @@ for _s in (sys.stdout, sys.stderr):
 
 from vtmak.derive.config import DeriveRules                    # noqa: E402
 from vtmak.derive.events import EventIndex                     # noqa: E402
-from vtmak.derive.relations import (r1r2_hit_state,            # noqa: E402
+from vtmak.derive.relations import (r2_damage,                 # noqa: E402
                                     r3_direct_fire, r4_indirect_fire,
                                     r7_precedes)
 
@@ -39,7 +39,7 @@ def main() -> int:
     rules = DeriveRules.load(CFG / "derive_rules.csv")
 
     results = [
-        ("R1·R2", r1r2_hit_state(idx, rules)),
+        ("R2", r2_damage(idx, rules)),
         ("R3", r3_direct_fire(idx)),
         ("R4", r4_indirect_fire(idx, rules)),
         ("R7", r7_precedes(idx, rules)),
@@ -67,9 +67,10 @@ def main() -> int:
     lines += ["", "## 레이어별", ""]
     lines += [f"- `{k}`: {v:,}" for k, v in Counter(r[1] for r in rows).most_common()]
 
-    # rule_id × predicate 분해. 술어별 집계만 보면 같은 술어를 두 규칙이
-    # 나눠 내는 경우(R1·R2가 같은 hitBy를 상태별로 가르는 것처럼)가 숨는다.
-    # rule_id별 내역을 나란히 두어 어느 건이 어느 규칙에서 왔는지 보이게 한다.
+    # rule_id × predicate 분해. 술어별 집계만 보면 한 규칙이 술어를 둘 내는
+    # 경우(R4가 같은 간접사격에서 firesUpon과 causes를 같이 내는 것처럼)가
+    # 숨는다. rule_id별 내역을 나란히 두어 어느 건이 어느 규칙에서 왔는지
+    # 보이게 한다.
     rule_predicate = Counter((r[0], r[2]) for r in rows)
     lines += ["", "## rule_id × 술어", ""]
     lines += ["| rule_id | 술어 | 건수 |", "| --- | --- | --- |"]

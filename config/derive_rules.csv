@@ -1,5 +1,4 @@
 rule_id,kind,key,value,note
-R1,hit_state,제압,suppresses,피격 문장과 같은 줄·같은 객체의 제압 전이. 실측 51건(2026-08-07)
-R2,hit_state,손상,damages,같은 규칙의 손상 전이. 실측 26건(2026-08-07)
+R2,hit_state,손상,damages,피격 문장과 같은 줄·같은 객체의 손상 전이. 실측 26건(2026-08-07). 제압 전이(옛 R1·suppresses)는 2026-08-27에 뺐다 — 위치 기반 제압 task엔 표적 UUID가 없고 제압사격을 했다는 사실만으로 특정 객체가 실제 제압됐다고 단정할 수 없다(설계 §9.2)
 R4,area_state,정상>피격 지역,firesUpon,간접사격 탄착을 받은 지역이 갖는 전이. 실측 21건
 R7,flag,skip_state_hold,true,"template=='stateHold'인 179건을 precedes 체인에서 뺀다. 상태 유지는 '다음에 일어난 일'이 아니라 같은 상태의 재서술이다. 판별자는 template이다 — state_from 공백(473건)으로 거르면 stateInit 294건까지 빠져 각 행위자가 출발점을 잃는다(2,368 → 2,074). 이 플래그는 R7 체인 구성에서만 소비한다. 다른 규칙이 hold 처리를 원하게 되면 재활용하지 말고 별도 플래그를 받는다"
