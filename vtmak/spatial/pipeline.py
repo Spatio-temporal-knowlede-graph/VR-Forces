@@ -180,7 +180,7 @@ def _write_manifest(path: Path, input_path: Path, dataset_version: str,
                     thresholds: Thresholds, counts: dict[str, int]) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({
+    payload = json.dumps({
         "dataset_version": dataset_version,
         "dataset_sha256": _sha256(input_path),
         "threshold_config_version": thresholds.version,
@@ -191,4 +191,7 @@ def _write_manifest(path: Path, input_path: Path, dataset_version: str,
         "generated_from": [input_path.name, "dis_catalog.csv",
                            "entity_class_map.csv", "weapon_ranges.csv"],
         "counts": counts,
-    }, ensure_ascii=False, indent=2), encoding="utf-8")
+    }, ensure_ascii=False, indent=2)
+    tmp = _tmp(path.parent)
+    tmp.write_text(payload, encoding="utf-8")
+    tmp.replace(path)

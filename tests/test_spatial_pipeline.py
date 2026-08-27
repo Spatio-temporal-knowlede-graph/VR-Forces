@@ -6,7 +6,7 @@ import pytest
 from vtmak.paths import CONFIG
 from vtmak.spatial.pipeline import (QUALITY_FIELDS, RELATION_FIELDS,
                                     process_csv)
-from vtmak.spatial.thresholds import Thresholds
+from vtmak.spatial.thresholds import PREDICATES, Thresholds
 
 HEADER = ("subject,predicate,object,latitude,longitude,timestamp,"
           "heading,entity_type,force")
@@ -118,3 +118,22 @@ def test_never_emits_approach(run):
     stamp = "2026-08-09T08:00:00.000Z"
     _, rel, _, _ = run([_row("A", LAT, stamp), _row("B", NORTH_2M, stamp)])
     assert "approach" not in rel.read_text(encoding="utf-8")
+
+
+def test_entities_with_unknown_force_are_not_treated_as_allies(run):
+    stamp = "2026-08-09T08:00:00.000Z"
+    lines = [_row("A", LAT, stamp, force=""), _row("B", NORTH_2M, stamp, force="")]
+    stats, _, qual, _ = run(lines)
+    # 소속이 비면 주체별 고유 sentinel이 붙는다. 빈 문자열을 그대로 두면 둘이 같은 편이
+    # 되어 대립 진영 필터가 이 쌍을 통째로 삼킨다.
+    assert stats.relation_counts["in_range_of"] == 2
+    assert "MISSING_FORCE" in qual.read_text(encoding="utf-8")
+
+
+def test_manifest_counts_include_predicates_that_produced_nothing(run):
+    stamp = "2026-08-09T08:00:00.000Z"
+    # 둘 다 force="1"이라 in_range_of는 대립 진영 필터에 걸려 0건으로 남는다.
+    _, _, _, man = run([_row("A", LAT, stamp), _row("B", NORTH_2M, stamp)])
+    counts = json.loads(man.read_text(encoding="utf-8"))["counts"]
+    assert counts["in_range_of"] == 0
+    assert set(counts) == set(PREDICATES)
