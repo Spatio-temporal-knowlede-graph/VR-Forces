@@ -425,12 +425,16 @@ def build_spec(events: list[Event], registry: dict[str, EntityDef],
             spec.entity_plans[slot.shooter_id].extend(new_steps)
 
         # 7단계: 새 슬롯이 끝에 붙었으니 시각순으로 되정렬한다. 한 슬롯의
-        # 네 합성 이벤트는 전부 slot.scheduled_time_s를 공유해 time_s만으로는
-        # 안 갈리므로 _slot_phase로 내부 순서를 못 박는다.
+        # 네 합성 이벤트는 전부 slot.scheduled_time_s와 event_id(=slot_id)를
+        # 공유해 그 둘만으로는 안 갈리므로 _slot_phase를 마지막 타이브레이커로
+        # 둬 내부 순서를 못 박는다. event_id를 phase보다 먼저 비교해야 한다 —
+        # 그래야 같은 시각에 걸린 서로 다른 두 슬롯(event_id가 다르다)이
+        # phase로 먼저 섞여 사수 하나의 사격→제압 인접성이 깨지는 경우를
+        # 막는다(오늘 데이터에는 그런 충돌이 없지만 대가 없는 안전장치다).
         for oid in {s.shooter_id for s in result.slots}:
             spec.entity_plans[oid] = sorted(
                 spec.entity_plans[oid],
-                key=lambda s: (s.time_s, _slot_phase(s), s.event_id))
+                key=lambda s: (s.time_s, s.event_id, _slot_phase(s)))
 
     # 통제점(= VR-Forces 전술 그래픽)은 태스크가 실제로 참조할 때만 만든다.
     # 예전에는 배치 지명까지 전부 찍었는데, 그건 지도 표시용일 뿐 태스크가

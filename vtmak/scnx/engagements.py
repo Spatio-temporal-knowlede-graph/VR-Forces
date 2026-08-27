@@ -296,6 +296,13 @@ def _pair_precheck(shooter_id: str, target_id: str,
                    accepted_pairs: set[tuple[str, str]]) -> str | None:
     """특정 (사수, 표적) 조합만의 자격 검사. 위치 계산 전에 끝낸다."""
     shooter, target = registry[shooter_id], registry[target_id]
+    # 지금은 도달 불가능하다 — target_ids가 taskable BLUE를 전부
+    # all_shooter_ids로 빼고, 남은 BLUE 비-taskable 표적은
+    # _target_precheck의 target_not_taskable이 이 함수보다 먼저 걸러낸다.
+    # 그래도 남겨 둔다: G4 C4.5(같은 진영 교전 차단)의 belt-and-braces로,
+    # registry의 taskable 분류가 바뀌어도 같은 진영 슬롯이 여기를 조용히
+    # 통과하지 못하게 막는다. 도달 불가능하다는 것 자체는 코드로 강제되지
+    # 않으므로(대상 진영 조합에 달렸다) 죽은 분기 삭제 판단과는 다르다.
     if shooter.faction == target.faction:
         return "same_faction"
     if assigned_shooters.get(shooter_id, 0) >= config.max_slots_per_shooter:
@@ -456,9 +463,6 @@ def build_enrichment_slots(
 
             if picked is not None:
                 accepted.append(picked)
-                if len(accepted) >= config.max_new_unique_pairs:
-                    reached_limit = True
-                    break          # 상한을 절대 넘지 않는다
 
     if len(accepted) < config.min_new_unique_pairs:
         tally = dict(sorted(Counter(r.reason for r in rejected).items()))
