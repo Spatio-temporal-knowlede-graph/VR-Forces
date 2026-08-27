@@ -1,6 +1,6 @@
 """derive_rules.csv 로더 — 규칙이 쓰는 값은 코드가 아니라 표에 있다.
 
-임계값 0.25나 '제압→suppresses' 같은 것을 코드에 박으면, 왜 그 숫자인지가
+임계값 0.25나 '손상→damages' 같은 것을 코드에 박으면, 왜 그 숫자인지가
 diff에서 사라진다. 표에는 note 열이 있어 근거(실측 건수)가 값 옆에 남는다.
 
 조회는 전부 시끄럽다. 없는 키에 기본값을 돌려주면 규칙이 0건을 낸 이유가
@@ -47,10 +47,14 @@ class DeriveRules:
         return c
 
     def hit_states(self) -> dict[str, tuple[str, str]]:
-        """상태 이름 → (rule_id, 관계 이름). 제압 → ("R1", "suppresses").
+        """상태 이름 → (rule_id, 관계 이름). 손상 → ("R2", "damages").
 
         rule_id를 같이 돌려준다. 관계 이름만 주면 그게 R1인지 R2인지를 코드가
         다시 정해야 하고, 그 순간 표 밖에 두 번째 정본이 생긴다.
+
+        옛 R1(제압 → "suppresses")은 2026-08-27에 derive_rules.csv에서
+        뺐다(설계 §9.2) — 이 메서드는 지금 남아 있는 행만 그대로 돌려주고,
+        빠진 규칙을 되살리거나 감추지 않는다.
         """
         return dict(self._hit_states)
 
