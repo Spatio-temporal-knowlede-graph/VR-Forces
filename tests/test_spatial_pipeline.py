@@ -1,5 +1,8 @@
 """입력 → 관계 구간 CSV·품질 리포트·매니페스트."""
+import csv
 import json
+from collections import Counter, defaultdict
+from io import StringIO
 
 import pytest
 
@@ -220,3 +223,53 @@ def test_manifest_counts_include_predicates_that_produced_nothing(run):
     counts = json.loads(man.read_text(encoding="utf-8"))["counts"]
     assert counts["in_range_of"] == 0
     assert set(counts) == set(PREDICATES)
+
+
+def test_manifest_counts_match_relations_csv_row_counts(run):
+    # §13: "관계별 산출 건수가 매니페스트와 일치한다." 여러 술어가 실제로
+    # 나오도록 두 시각·대립 진영·근접 배치를 섞는다.
+    lines = []
+    for stamp in ("2026-08-09T08:00:00.000Z", "2026-08-09T08:00:01.000Z"):
+        lines.append(_row("A", LAT, stamp, force="1"))
+        lines.append(_row("B", NORTH_2M, stamp, force="2"))
+    _, rel, _, man = run(lines)
+    counts = json.loads(man.read_text(encoding="utf-8"))["counts"]
+
+    reader = csv.DictReader(StringIO(rel.read_text(encoding="utf-8")))
+    actual = Counter(row["predicate"] for row in reader)
+
+    for predicate in PREDICATES:
+        assert counts[predicate] == actual.get(predicate, 0), predicate
+
+
+def test_in_front_of_and_behind_never_overlap_for_the_same_ordered_pair(run):
+    # §13: "in_front_of와 behind가 같은 쌍·같은 방향·같은 시점에 동시에 부여되지
+    # 않는다." B의 방위를 시간에 따라 뒤집어 (A, ?, B)가 behind에서
+    # in_front_of로 넘어가게 만들고, 그 두 구간이 겹치지 않는지 확인한다.
+    lines = []
+    headings = {
+        "2026-08-09T08:00:00.000Z": "0.0",     # B가 북쪽을 보면 남쪽의 A는 behind
+        "2026-08-09T08:00:01.000Z": "0.0",
+        "2026-08-09T08:00:02.000Z": "180.0",   # B가 남쪽을 보면 A는 in_front_of
+        "2026-08-09T08:00:03.000Z": "180.0",
+    }
+    for stamp, b_heading in headings.items():
+        lines.append(_row("A", LAT, stamp, heading="0.0"))
+        lines.append(_row("B", NORTH_2M, stamp, heading=b_heading))
+    _, rel, _, _ = run(lines)
+
+    reader = csv.DictReader(StringIO(rel.read_text(encoding="utf-8")))
+    by_pair = defaultdict(list)
+    for row in reader:
+        if row["predicate"] in ("in_front_of", "behind"):
+            by_pair[(row["subject"], row["object"])].append(
+                (row["predicate"], row["t_start"], row["t_end"]))
+
+    assert by_pair[("A", "B")]   # 이 시나리오가 실제로 두 술어를 다 만들었는지 확인
+    fronts = [e for e in by_pair[("A", "B")] if e[0] == "in_front_of"]
+    behinds = [e for e in by_pair[("A", "B")] if e[0] == "behind"]
+    assert fronts and behinds
+    for _, fs, fe in fronts:
+        for _, bs, be in behinds:
+            assert not (fs <= be and bs <= fe), \
+                f"in_front_of {fs}-{fe}가 behind {bs}-{be}와 겹친다"
