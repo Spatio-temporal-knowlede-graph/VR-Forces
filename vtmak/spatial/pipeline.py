@@ -17,7 +17,7 @@ from .interval import IntervalAccumulator, canonicalize
 from .models import RelationStats
 from .pair import Placement
 from .profile import ProfileIndex
-from .quality import MISSING_FORCE, QualityLog
+from .quality import MISSING_FORCE, SAMPLING_GAP, QualityLog
 from .thresholds import PREDICATES, SYMMETRIC_PREDICATES, Thresholds
 
 INPUT_FIELDS = ["subject", "predicate", "object", "latitude", "longitude",
@@ -170,6 +170,14 @@ def process_csv(input_path: Path, relations_path: Path, quality_path: Path,
             if prev_seconds is not None and seconds < prev_seconds:
                 raise ValueError(
                     f"입력이 시각순이 아니다: {timestamp!r}가 앞선 시각보다 이르다")
+            if prev_seconds is not None and seconds - prev_seconds > thresholds.max_merge_gap_s:
+                # IntervalAccumulator는 이 간격에서 구간을 조용히 쪼갤 뿐 아무것도
+                # 남기지 않는다(그게 그 클래스의 역할이 아니다 — §8). 소비자가
+                # "관계가 끝났다"와 "관측을 못 했다"를 구별하려면 여기서 남겨야 한다.
+                gap = seconds - prev_seconds
+                log.record(timestamp, [], SAMPLING_GAP,
+                          f"이전 시각과의 간격 {gap:.1f}s가 "
+                          f"max_merge_gap_s {thresholds.max_merge_gap_s:.1f}s를 넘는다")
             prev_seconds = seconds
             placements, follow = _build(timestamp, rows, index, log)
             observations = judge_frame(timestamp, placements, follow, thresholds,

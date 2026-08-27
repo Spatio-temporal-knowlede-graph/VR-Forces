@@ -139,6 +139,20 @@ def test_rejects_a_frame_earlier_than_the_previous_one(run):
         run(lines)
 
 
+def test_a_gap_beyond_the_merge_cap_is_reported_as_sampling_gap(run):
+    early, late = "2026-08-09T08:00:00.000Z", "2026-08-09T08:03:47.000Z"  # 227초 뒤
+    lines = [_row("A", LAT, early), _row("A", LAT, late)]
+    _, _, qual, _ = run(lines)
+    assert "SAMPLING_GAP" in qual.read_text(encoding="utf-8")
+
+
+def test_a_gap_within_the_merge_cap_is_not_reported(run):
+    early, late = "2026-08-09T08:00:00.000Z", "2026-08-09T08:00:03.000Z"  # 병합상한 이내
+    lines = [_row("A", LAT, early), _row("A", LAT, late)]
+    _, _, qual, _ = run(lines)
+    assert "SAMPLING_GAP" not in qual.read_text(encoding="utf-8")
+
+
 def test_unmapped_entity_type_is_reported(run):
     stamp = "2026-08-09T08:00:00.000Z"
     lines = [_row("A", LAT, stamp, dis="9:9:999:9:9:9:9"), _row("B", NORTH_2M, stamp)]
