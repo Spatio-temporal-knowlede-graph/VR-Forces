@@ -6,7 +6,7 @@ stayAt,template,occupy,wait,피격 후 잔류 — wait-duration 60초
 directFireAt,template,directFireAt,fire_direct,
 aimAt,template,aimAt,aim,포신 정렬 — 방향 조준(aiming-type 2). 표적이 정적 지점이라 객체 조준을 못 쓴다. 사거리는 G0가 별도로 검사
 indirectFireAt,template,indirectFireAt,fire_indirect,
-hitBy,template,hitBy,move_cover,피격 후 엄폐(find_cover). Threat = 피격 원천 객체
+hitBy,template,hitBy,move_cover,피격 후 엄폐 — find_cover(컨트롤러 비활성 실측)를 좌표 이동으로 대체한다(Task 5). Threat = 피격 원천 객체
 hitArea,template,hitArea,noop,주변 탄착
 targetArea,template,hitArea,noop,직전 탄착 이벤트의 대상 구역
 stateInit,template,stateChangedTo,noop,
@@ -22,4 +22,4 @@ engSource,template,engagementSource,noop,교전기록 — 피격 원천 확정
 방어 위치 이동,move_action,defend,move_cp,지정된 방어 위치로 — 통제점으로 이동(move-to)
 감시 위치 이동 및 관측 방향 유지,move_action,moveTo,move_watch,이동 뒤 그 방향으로 방향 조준(set-aiming-point)을 건다 — 원문의 '관측 방향 유지'가 근거
 보급 이동 및 정차,move_action,transportTo,move_slow,저속 보급 기동(set-speed + 이동)
-사격 준비 대기>사격 준비,state_transition,preparesFiringPosition,move_firing_position,"aimAt과 같은 시각·같은 객체·같은 원문 줄의 짝이다(21/21 실측, 2026-08-05). 포신 정렬과 사격위치 확보는 별개 행위라 둘 다 의도적으로 남긴다 — 조준이 재배치보다 먼저라 재배치 반경(100m) 안에서 조준각이 몇 도 어긋나는 결과는 감수한다"
+사격 준비 대기>사격 준비,state_transition,preparesFiringPosition,move_firing_position,"aimAt과 같은 시각·같은 객체·같은 원문 줄의 짝이다(21/21 실측, 2026-08-05). 포신 정렬과 사격위치 확보는 별개 행위라 둘 다 의도적으로 남긴다 — Task 5(2026-08-27)부터 사격위치 확보는 choose_firing_location으로 사수의 사거리 안 golden 지점을 고르는 좌표 이동이다. 조준이 재배치보다 먼저라 재배치 후 실제 위치와 조준각 사이에 사거리 규모(수백m~수km, 표적까지의 실제 사거리에 좌우된다)의 오차가 남을 수 있다 — 받아들인 대가다"

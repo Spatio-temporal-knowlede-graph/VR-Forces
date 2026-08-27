@@ -17,4 +17,4 @@ suppress,COORD,target,direct,제압사격,,,
 wait,*,,,대기,,,참조 대상 없음 — 정지·잔류 표현
 follow,ENTITY,unit_leader,,대형 추종 이동,,,부대 선두를 추종
 move_firing_position,COORD,next_fire_target,,좌표로 이동,,,"사격위치 탐색 대체 — find_firing_position은 2026-08 실측 21/21 실패(컨트롤러 비활성). 위협 표적과 사거리로 사격 지점을 컴파일 시 계산해 좌표 이동으로 내린다. 원래 의도는 PlanStep.planned_intent에 남는다"
-move_cover,ENTITY,source_obj,,좌표로 이동,,,"피격 후 엄폐 대체 — find_cover는 다수 모델에서 컨트롤러 비활성. 위협에서 멀어지는 golden 지형점을 골라 좌표 이동으로 내린다. Threat = 피격 원천 객체"
+move_cover,ENTITY,source_obj,,좌표로 이동,,방향 조준,"피격 후 엄폐 대체 — find_cover는 다수 모델에서 컨트롤러 비활성. 위협에서 멀어지는 golden 지형점을 골라 좌표 이동으로 내린다. Threat = 피격 원천 객체. 후행_행동은 엄폐 뒤 위협 쪽 방향 조준(move_watch가 쓰던 같은 칸, 리뷰 라운드 1) — 저작된 이동에만 붙는다"

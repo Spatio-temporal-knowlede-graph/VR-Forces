@@ -10,7 +10,7 @@ import math
 from dataclasses import dataclass, field
 
 from ..gates import PositionTracker, engagement_locations, engagement_pairs
-from ..geometry import BattlefieldLayout, Coord, bearing_elevation
+from ..geometry import BattlefieldLayout, Coord, bearing_elevation, ground_distance
 from ..parser import Event, PatternMap
 from ..paths import CONFIG
 from ..ranges import WeaponRanges
@@ -174,11 +174,13 @@ class _Ctx:
         self._tracker = PositionTracker(events, registry)
         self._hit_at = engagement_locations(events)
         self.referenced_locs: set[str] = set()
-        # move_cover가 같은 golden 지점을 고른 객체를 세는 카운터(ref ->
-        # 다음에 배정할 순번 k). 이격은 더 이상 지점 선택 필터가 아니라
-        # 지점을 공유하는 객체들의 배치 규칙이다 — choose_cover_location
-        # 아래 docstring에 두 차례 정정한 근거가 있다.
-        self._cover_assignments: dict[str, int] = {}
+        # move_cover가 같은 golden 지점을 공유하는 객체를 배정하는 상태.
+        # 이격은 지점 선택 필터가 아니라 지점을 공유하는 객체들의 배치
+        # 규칙이다 — choose_cover_location 아래 docstring에 네 차례
+        # 정정한 근거가 있다(2026-08-27, 리뷰 라운드 1).
+        self._cover_k: dict[str, int] = {}          # ref -> 다음 순번 k
+        self._cover_az: dict[str, float] = {}        # ref -> 첫 배정자의 방위(고정)
+        self._cover_members: dict[str, list[Coord]] = {}  # ref -> 검증 통과한 목적지들
         # 부대 선두 — 대형 추종 이동(follow-entity)의 추종 대상.
         self._leader: dict[str, str] = {}
         for oid in sorted(entity_uuids):
@@ -268,38 +270,89 @@ class _Ctx:
                               threat_coord: Coord) -> tuple[str, Coord] | None:
         """find_cover 대체.
 
-        choose_cover_location(engagements.py)은 이제 위협거리·이동예산만
-        본다 — 최소 이격 필터를 지점 선택에서 뺐다(2026-08-27, 세 번째
-        정정). 앞서 두 번 다 필터로 돌렸다: t=0 배치 좌표로 재면 hitBy 77건
-        중 50건만 남고, 이번 빌드에서 고른 점만 예약해도 같은 위치에 몰린
-        부대(이 시나리오의 대규모 사상자 군집)가 첫 사상자에게 유일한 후보를
-        빼앗겨 2/77까지 떨어진다(둘 다 실측). golden 지점 21개 대 hitBy
-        77건 밀도에서는 필터가 이격을 만족시킬 수 없다 — 지울 수만 있다.
+        choose_cover_location(engagements.py)은 위협거리·이동예산만 본다 —
+        최소 이격은 지점 선택 필터가 아니라 지점을 공유하는 객체들의 배치
+        규칙이다(2026-08-27, 세 번째 정정: t=0 배치 좌표 필터는 hitBy 77건
+        중 50건만 남기고, 이번 빌드 예약 필터는 몰린 부대의 첫 사상자가
+        유일한 후보를 빼앗아 2/77까지 떨어뜨렸다 — golden 21점 대 77건
+        밀도에서 필터는 지울 수만 있다).
 
-        그래서 이격은 지점 선택이 아니라 지점 공유 배치 규칙이다. 같은 ref를
-        고른 k번째 객체(0부터, 이 build_spec 호출 안에서 sorted(oid) 순으로
-        처리되므로 k는 결정적이다)를 위협→지점 방위(bearing_elevation)에
-        수직인 축 위, min_entity_separation_m 간격으로 좌우 번갈아 세운다
-        (k=0 → 그 지점 자체, k=1 → +15m, k=2 → -15m, k=3 → +30m, ...).
-        수직 축을 쓰는 이유: 위협까지의 거리가 그 축을 따라 거의 불변이라
-        지점을 고른 이유(위협에서 멀어짐)가 벌린 뒤에도 유지된다 — 위협을
-        마주보는 방어선의 모양이지, 위협을 향해 늘어선 종대가 아니다.
+        네 번째 정정(2026-08-27, 리뷰 라운드 1): 직선 벌림(k번째 객체를
+        위협→지점 축에 수직으로 15m·30m·45m·... 배치)은 군집 크기에
+        비례해 자란다 — 50명 군집의 k=49가 375m까지 밀려나 이동예산
+        (max_cover_move_m)과 '그 지점 자체'라는 전제를 둘 다 깼다. 대신
+        반원형 고리를 쓴다: 고리 j(1부터)는 반지름 min_entity_separation_m*j,
+        용량 max(1, floor(pi*j))(반원 둘레 pi*반지름을 이격 간격으로 나눈
+        것과 같다) — 군집 크기에 √n으로 자라 50명이어도 j=6(90m)에서
+        끝난다. 축은 첫 배정자(k=0)의 위협→지점 방위로 고정해 저장하고
+        재사용한다 — 액터마다 다시 계산하면 위협 방위가 반대인 두 액터가
+        같은 오프셋에 겹칠 수 있다(리뷰 발견 2: az 270도 k=1과 az 90도
+        k=2가 둘 다 정북 15m에 떨어지는 사례).
+
+        오프셋을 계산한 뒤에는 반드시 재검증한다 — 후보 지점이 아니라 최종
+        목적지를 검증하는 게 불변식이다. 이동예산·자기 위협 대비 이격 증가·
+        같은 지점에 이미 배정된 다른 목적지와의 최소 이격, 셋 다 못 지키면
+        None(no_verified_position)이다 — 엄폐를 정직하게 잃는 게 설계된
+        결과이고 감사 로그에 그대로 남는다.
         """
         loc = _choose_cover_location(self._layout, actor_coord, threat_coord,
                                      self._enrichment_config)
         if loc is None:
             return None
         ref, point_coord = loc
-        k = self._cover_assignments.get(ref, 0)
-        self._cover_assignments[ref] = k + 1
+        k = self._cover_k.get(ref, 0)
+        self._cover_k[ref] = k + 1
         if k == 0:
-            return ref, point_coord
-        az, _ = bearing_elevation(threat_coord, point_coord)
-        perp = az + (math.pi / 2 if k % 2 else -math.pi / 2)
-        d = self._enrichment_config.min_entity_separation_m * ((k + 1) // 2)
-        east = d * math.sin(perp)
-        north = d * math.cos(perp)
-        return ref, self._layout.offset_coord(ref, east, north)
+            self._cover_az[ref] = bearing_elevation(threat_coord,
+                                                    point_coord)[0]
+            dest = point_coord
+        else:
+            dest = self._ring_offset(ref, self._cover_az[ref], k)
+
+        cfg = self._enrichment_config
+        # 인접한 고리 위치는 설계상 정확히 min_entity_separation_m만큼
+        # 떨어지도록 계산된다(고리 용량 자체가 그 간격에서 나온다) — 그런데
+        # offset_coord는 위도별 국지 선형 근사를 쓰고 ground_distance는
+        # 정확한 WGS84 타원체 직선거리를 쓰므로, 이론상 정확히 경계에 있는
+        # 두 점이 실측으로는 수 마이크로미터 모자라게 나올 수 있다(실측
+        # 확인: 15.000000m가 아니라 14.999998612m). 물리적으로 무의미한
+        # 그 오차 때문에 정당한 배치가 거부되지 않도록 아주 작은 허용폭을
+        # 둔다 — 이격 자체를 완화하는 게 아니라 뜨는 소수점 잡음만 흡수한다.
+        # 실측 오차 규모는 ~1.4e-6m — 10배 여유를 둔다.
+        _EPS_M = 1e-4
+        current = ground_distance(actor_coord, threat_coord)
+        move = ground_distance(actor_coord, dest)
+        away = ground_distance(dest, threat_coord)
+        members = self._cover_members.get(ref, [])
+        if (move > cfg.max_cover_move_m or away <= current
+                or any(ground_distance(dest, o)
+                      < cfg.min_entity_separation_m - _EPS_M
+                      for o in members)):
+            return None
+        self._cover_members.setdefault(ref, []).append(dest)
+        return ref, dest
+
+    def _ring_offset(self, ref: str, az: float, k: int) -> Coord:
+        """k번째(k>=1) 반원 고리 배정. az는 위협에서 지점을 향하는 방위로,
+        그대로 이어가면 위협에서 멀어지는 방향이다 — 반원은 그 방위를
+        중심으로 ±90도를 덮어, 대부분의 자리가 지점 자체보다도 위협에서
+        멀어지고 정확히 접선(±90도)인 자리만 거의 같다(재검증이 그 경우를
+        거른다).
+        """
+        j, cap = 1, 0
+        remaining = k
+        while True:
+            cap = max(1, math.floor(math.pi * j))
+            if remaining <= cap:
+                break
+            remaining -= cap
+            j += 1
+        p = remaining - 1                       # 0부터, 고리 안에서의 순번
+        radius = self._enrichment_config.min_entity_separation_m * j
+        angle = az + (-math.pi / 2 + (p + 0.5) * math.pi / cap)
+        east = radius * math.sin(angle)
+        north = radius * math.cos(angle)
+        return self._layout.offset_coord(ref, east, north)
 
 
 def build_spec(events: list[Event], registry: dict[str, EntityDef],

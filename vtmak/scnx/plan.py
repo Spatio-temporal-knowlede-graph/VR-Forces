@@ -89,8 +89,12 @@ class PlanStep:
     refs: list[str] = field(default_factory=list)
     issues: list[str] = field(default_factory=list)
     skip_reason: str = ""
-    # 아래 셋은 교전 슬롯 lowering(build_engagement_steps)이 쓴다. 슬롯이
-    # 아닌 단계는 전부 기본값(빈 문자열)으로 남는다.
+    # slot_id는 교전 슬롯 lowering(build_engagement_steps)만 쓴다 — 슬롯이
+    # 아닌 단계는 기본값(빈 문자열)으로 남는다. planned_intent·intent_object
+    # 는 그보다 넓다 — 슬롯 lowering뿐 아니라 find_firing_position·find_cover
+    # 대체(_verified_move, Task 5)도 채운다. 둘 다 스크립트 task가 아닌
+    # 좌표 이동으로 내리면서 원래 의도를 GT에 안 나가는 계획 메타데이터로
+    # 남기는 자리라 같은 필드를 공유한다.
     slot_id: str = ""
     planned_intent: str = ""
     intent_object: str = ""
@@ -411,8 +415,49 @@ def _verified_move(e: Event, entity: EntityDef, kind: str,
         return [step]
 
     _, coord = loc
-    return [_coord_move_step(e, entity, kind, intent, threat, coord, catalog,
-                             kinds)]
+    step = _coord_move_step(e, entity, kind, intent, threat, coord, catalog,
+                            kinds)
+    out = [step]
+    if step.pln:
+        for label in kinds.post_labels(kind):
+            if kind == "move_cover" and label == "방향 조준":
+                # 엄폐 이동 뒤 위협을 향해 방향 조준한다 — 군사적으로 옳은
+                # 순서(엄폐 → 위협 관측)이고, task_kinds.csv의 후행_행동
+                # 칸이 move_watch가 먼저 쓰던 것과 같은 칸이다(리뷰 라운드 1).
+                # 방금 계산한 threat_coord·coord를 그대로 쓴다.
+                out.append(_orient_on_threat_step(e, entity, catalog, coord,
+                                                  threat_coord))
+            else:
+                raise KeyError(
+                    f"_verified_move은 {kind}의 후행_행동 '{label}'을 모른다")
+    return out
+
+
+def _orient_on_threat_step(e: Event, entity: EntityDef, catalog: TaskCatalog,
+                           dest_coord: Coord, threat_coord: Coord) -> PlanStep:
+    """엄폐 지점에 도착한 뒤 위협 쪽으로 방향 조준(aiming-type 2)한다.
+
+    move_watch의 방향 조준 동반 행동(_companion)과 같은 카탈로그 라벨이지만
+    기준점이 다르다 — move_watch는 '출발 지점에서 목적지를 볼 때'의 방위를
+    쓰고(도착 뒤 진행 방향을 계속 본다는 근사), move_cover는 '도착한
+    엄폐 지점에서 위협을 볼 때'의 방위를 쓴다(엄폐했으면 위협을 관측해야
+    한다). 엄폐 지점은 golden 지명이 아니라 합성 오프셋 좌표일 수 있어
+    ctx.coord_of로 다시 풀 수 없다 — _verified_move가 이미 계산해 둔
+    dest_coord·threat_coord를 그대로 받는다.
+    """
+    label = "방향 조준"
+    t = catalog.get(entity.type_group, label)
+    if t is None:
+        raise KeyError(
+            f"task_kinds.csv가 '{label}'을 move_cover의 후행_행동으로 "
+            f"선언했는데 task_catalog에 ({entity.type_group}, {label}) 행이 없다")
+    az, el = bearing_elevation(dest_coord, threat_coord)
+    pln = t.pln.strip()
+    pln = pln.replace("AZIMUTH_RAD", f"{az:.6f}")
+    pln = pln.replace("ELEVATION_RAD", f"{el:.6f}")
+    pln = with_weapon(pln, entity.weapons)
+    return PlanStep(e.event_id, e.time_s, e.template, "move_cover:방향 조준",
+                    label, pln)
 
 
 # 태스크 템플릿에 무기 이름이 들어가는 자리. variable-data-types 블록의
