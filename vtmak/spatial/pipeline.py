@@ -18,7 +18,7 @@ from .models import RelationStats
 from .pair import Placement
 from .profile import ProfileIndex
 from .quality import MISSING_FORCE, SAMPLING_GAP, QualityLog
-from .thresholds import PREDICATES, SYMMETRIC_PREDICATES, Thresholds
+from .thresholds import PREDICATES, PROVISIONAL, SYMMETRIC_PREDICATES, Thresholds
 
 INPUT_FIELDS = ["subject", "predicate", "object", "latitude", "longitude",
                 "timestamp", "heading", "entity_type", "force"]
@@ -141,12 +141,17 @@ def _span(placements: list[Placement]) -> float:
 
 def process_csv(input_path: Path, relations_path: Path, quality_path: Path,
                 manifest_path: Path, config_dir: Path, thresholds: Thresholds,
-                dataset_version: str, thresholds_path: Path | None = None) -> RelationStats:
+                dataset_version: str, thresholds_path: Path | None = None,
+                time_base: str = "unverified") -> RelationStats:
     """input_path에서 공간 관계 구간을 파생한다.
 
     thresholds_path는 thresholds를 만든 덮어쓰기 JSON의 경로다(없으면 기본값만
     쓴 것). thresholds 자체가 아니라 이 경로가 있어야 매니페스트의
     threshold_config_sha256이 "실제로 무엇을 해시했는가"를 밝힐 수 있다.
+
+    time_base 기본값은 "unverified"다 — 내보내기가 시뮬레이션 시각을 낼 수
+    있는지 아직 확인 못 했다(설계 §14). 확신에 찬 오답이 정직한 모름보다
+    나쁘므로 호출부가 실제로 검증하기 전에는 이 기본값을 그대로 둔다.
     """
     input_path, config_dir = Path(input_path), Path(config_dir)
     index = ProfileIndex.load(config_dir)
@@ -193,7 +198,7 @@ def process_csv(input_path: Path, relations_path: Path, quality_path: Path,
     _write_relations(relations_path, intervals, dataset_version, thresholds.version)
     _write_quality(quality_path, log, dataset_version, thresholds.version)
     _write_manifest(manifest_path, input_path, dataset_version, thresholds, counts,
-                    thresholds_path)
+                    thresholds_path, time_base)
     return RelationStats(input_rows=input_rows, timestamps=frames,
                          relation_counts=counts, quality_issues=log.count)
 
@@ -234,7 +239,7 @@ def _write_quality(path: Path, log: QualityLog, dataset_version: str,
 
 def _write_manifest(path: Path, input_path: Path, dataset_version: str,
                     thresholds: Thresholds, counts: dict[str, int],
-                    thresholds_path: Path | None) -> None:
+                    thresholds_path: Path | None, time_base: str) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps({
@@ -242,13 +247,22 @@ def _write_manifest(path: Path, input_path: Path, dataset_version: str,
         "dataset_sha256": _sha256(input_path),
         "threshold_config_version": thresholds.version,
         "threshold_config_sha256": _threshold_config_sha256(thresholds, thresholds_path),
-        # 내보내기가 시뮬레이션 시각을 주는지 아직 확인 못 했다(설계 §14).
-        "time_base": "unverified",
+        "time_base": time_base,
         "symmetric": sorted(SYMMETRIC_PREDICATES),
         "symmetric_storage": thresholds.symmetric_storage,
         "generated_from": [input_path.name, "dis_catalog.csv",
                            "entity_class_map.csv", "weapon_ranges.csv"],
         "counts": counts,
+        # §10이 임시값으로 표시한 필드들. 이 저장소에는 threshold config 파일이
+        # 따로 없어(기본값이 dataclass에 산다) 소비자가 매니페스트를 봐도 다섯
+        # 값 중 넷이 자리표시자라는 걸 알 길이 없었다.
+        "provisional": sorted(PROVISIONAL),
+        # approach는 symmetric 목록에는 있지만 counts에는 없다 — 아직 안
+        # 만든다. 이유를 여기 남기지 않으면 매니페스트만 보고는 빠뜨린 건지
+        # 일부러 뺀 건지 알 수 없다.
+        "approach_note": ("approach는 §5.5에 정의돼 있지만 이 판에서는 생성하지 "
+                          "않는다 — time_base가 시뮬레이션 시각으로 확인되기 "
+                          "전까지 범위 밖이다(설계 §14)."),
     }, ensure_ascii=False, indent=2)
     tmp = _tmp(path.parent)
     tmp.write_text(payload, encoding="utf-8")

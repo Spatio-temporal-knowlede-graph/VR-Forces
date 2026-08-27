@@ -40,4 +40,6 @@ class RelationStats:
     input_rows: int
     timestamps: int
     relation_counts: dict[str, int] = field(default_factory=dict)
+    # QualityLog.count다 — 개별 이슈 수가 아니라 (timestamp, code)로 묶인 행
+    # 수다. 실데이터에서는 한 행이 좌표 충돌 수천 건을 대표할 수 있다(§8).
     quality_issues: int = 0

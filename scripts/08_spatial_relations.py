@@ -32,6 +32,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--thresholds", type=Path, default=None, help="임계값 덮어쓰기 JSON")
     p.add_argument("--dataset-version", default="unversioned",
                    help="모든 산출 행에 찍을 판 이름")
+    p.add_argument("--time-base", default="unverified",
+                   choices=("simulation", "wallclock", "unverified"),
+                   help="timestamp 열의 시간 기준(설계 §3.2·§11.3). 확인 전에는 "
+                        "unverified를 그대로 둔다 — 확신에 찬 오답이 정직한 "
+                        "모름보다 나쁘다(§14)")
     return p
 
 
@@ -43,7 +48,8 @@ def main(argv: list[str] | None = None) -> int:
             config_dir=args.config_dir,
             thresholds=Thresholds.load(args.thresholds),
             dataset_version=args.dataset_version,
-            thresholds_path=args.thresholds)
+            thresholds_path=args.thresholds,
+            time_base=args.time_base)
     except (OSError, ValueError, csv.Error, json.JSONDecodeError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2

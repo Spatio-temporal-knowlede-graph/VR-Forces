@@ -39,6 +39,10 @@ class IntervalAccumulator:
 
     def observe(self, timestamp: str, seconds: float,
                 observations: Iterable[Observation]) -> None:
+        # 완전히 같은 관측이 중복으로 들어와도 이 딕셔너리 컴프리헨션이 마지막
+        # 것 하나만 남긴다. canonicalize._add가 이미 한 번 걸러 내지만(대칭
+        # 저장 단계), 여기가 두 번째 그물이다 — 호출부가 바뀌어도 이 클래스
+        # 혼자 안전해야 한다. "최적화"랍시고 둘 중 하나를 지우면 안 된다.
         current: dict[_Key, Observation] = {
             (o.subject, o.predicate, o.object): o for o in observations
         }
@@ -110,6 +114,11 @@ def canonicalize(observations: Iterable[Observation],
             _add(item)
             continue
         low, high = sorted((item.subject, item.object))
+        # 반대 방향 관측이 있었다면 그쪽의 evidence는 여기서 버려진다.
+        # 대칭 술어(next_to·approach)는 evidence를 애초에 채우지 않으므로
+        # (§11.1) 버리는 쪽이 항상 빈 문자열이라 안전하다. evidence를 쓰는
+        # in_range_of는 비대칭이라 SYMMETRIC_PREDICATES에 없어 이 분기를
+        # 타지 않는다.
         _add(Observation(low, item.predicate, high, item.evidence))
         if storage == "both":
             _add(Observation(high, item.predicate, low, item.evidence))

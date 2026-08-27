@@ -31,6 +31,23 @@ def test_parser_defaults_to_the_repo_config():
         ["in.csv", "--relations", "r.csv", "--quality", "q.csv", "--manifest", "m.json"])
     assert args.config_dir == CONFIG
     assert args.dataset_version == "unversioned"
+    assert args.time_base == "unverified"
+
+
+def test_parser_accepts_a_time_base_override():
+    module = _load()
+    args = module.build_parser().parse_args(
+        ["in.csv", "--relations", "r.csv", "--quality", "q.csv",
+         "--manifest", "m.json", "--time-base", "simulation"])
+    assert args.time_base == "simulation"
+
+
+def test_parser_rejects_an_unknown_time_base():
+    module = _load()
+    with pytest.raises(SystemExit):
+        module.build_parser().parse_args(
+            ["in.csv", "--relations", "r.csv", "--quality", "q.csv",
+             "--manifest", "m.json", "--time-base", "atomic-clock"])
 
 
 def test_parser_accepts_a_threshold_override():

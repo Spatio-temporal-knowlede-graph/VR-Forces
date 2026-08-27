@@ -6,7 +6,7 @@ import pytest
 from vtmak.paths import CONFIG
 from vtmak.spatial.pipeline import (QUALITY_FIELDS, RELATION_FIELDS,
                                     process_csv)
-from vtmak.spatial.thresholds import PREDICATES, Thresholds
+from vtmak.spatial.thresholds import PREDICATES, PROVISIONAL, Thresholds
 
 HEADER = ("subject,predicate,object,latitude,longitude,timestamp,"
           "heading,entity_type,force")
@@ -89,6 +89,11 @@ def test_manifest_records_versions_counts_and_storage(run):
     assert sorted(payload["symmetric"]) == ["approach", "next_to"]
     assert "next_to" in payload["counts"]
     assert "approach" not in payload["counts"]
+    # time_base는 확인 전까지 unverified가 기본이다 — 확신에 찬 오답이 정직한
+    # 모름보다 나쁘다(§14).
+    assert payload["time_base"] == "unverified"
+    assert set(payload["provisional"]) == PROVISIONAL
+    assert "approach" in payload["approach_note"]
 
 
 def test_manifest_has_a_threshold_config_sha256_even_without_an_override(run):
@@ -96,6 +101,18 @@ def test_manifest_has_a_threshold_config_sha256_even_without_an_override(run):
     _, _, _, man = run([_row("A", LAT, stamp), _row("B", NORTH_2M, stamp)])
     payload = json.loads(man.read_text(encoding="utf-8"))
     assert len(payload["threshold_config_sha256"]) == 64  # 기본값만 써도 해시는 있다
+
+
+def test_manifest_time_base_can_be_overridden(tmp_path):
+    stamp = "2026-08-09T08:00:00.000Z"
+    source = tmp_path / "in.csv"
+    source.write_text("\n".join([HEADER, _row("A", LAT, stamp),
+                                 _row("B", NORTH_2M, stamp)]) + "\n", encoding="utf-8")
+    man = tmp_path / "manifest.json"
+    process_csv(source, tmp_path / "r.csv", tmp_path / "q.csv", man,
+               config_dir=CONFIG, thresholds=Thresholds(), dataset_version="v",
+               time_base="simulation")
+    assert json.loads(man.read_text(encoding="utf-8"))["time_base"] == "simulation"
 
 
 def test_threshold_config_sha256_hashes_the_override_file_when_given(tmp_path):

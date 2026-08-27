@@ -15,6 +15,7 @@ from pathlib import Path
 from ..ranges import RangeSpec, WeaponRanges
 from ..registry import ClassMap
 from ..scnx.catalog import DisCatalog
+from .quality import CLASS_JOIN_MISMATCH
 from .thresholds import SPACING_BY_TYPE_GROUP
 
 
@@ -57,7 +58,7 @@ class ProfileIndex:
         for entity_class in ranges.classes():
             if not dis.known(entity_class):
                 raise ValueError(
-                    f"CLASS_JOIN_MISMATCH: {entity_class!r}가 weapon_ranges에는 "
+                    f"{CLASS_JOIN_MISMATCH}: {entity_class!r}가 weapon_ranges에는 "
                     f"있는데 dis_catalog에 없다")
             code = dis.dis(entity_class)
             if code is None:
@@ -67,12 +68,12 @@ class ProfileIndex:
                 continue
             if not class_map.known(entity_class):
                 raise ValueError(
-                    f"CLASS_JOIN_MISMATCH: {entity_class!r}가 weapon_ranges에는 "
+                    f"{CLASS_JOIN_MISMATCH}: {entity_class!r}가 weapon_ranges에는 "
                     f"있는데 entity_class_map에 없다")
             group = class_map.type_group(entity_class)
             if group not in SPACING_BY_TYPE_GROUP:
                 raise ValueError(
-                    f"CLASS_JOIN_MISMATCH: type_group {group!r}({entity_class})의 "
+                    f"{CLASS_JOIN_MISMATCH}: type_group {group!r}({entity_class})의 "
                     f"이격거리가 thresholds.SPACING_BY_TYPE_GROUP에 없다")
             by_dis[_dis_key(" ".join(str(n) for n in code))] = EntityProfile(
                 entity_class=entity_class,

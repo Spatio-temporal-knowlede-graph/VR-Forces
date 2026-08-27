@@ -22,6 +22,15 @@ SPACING_BY_TYPE_GROUP: dict[str, float] = {
 # 대칭 술어. approach는 아직 안 만들지만 의미는 지금 확정돼 있으므로 여기 둔다.
 SYMMETRIC_PREDICATES: frozenset[str] = frozenset({"next_to", "approach"})
 
+# 설계 §10이 "임시값"으로 표시한 필드 이름. ver2.0 재수집 뒤 재보정 대상이다.
+# max_merge_gap_s는 여기 없다 — 관측된 정상 간격의 최댓값이라는 실측 근거가
+# 있어(§2.3) 임시값이 아니다(§10 말미). 매니페스트가 이 목록을 그대로 노출해
+# 소비자가 다섯 값 중 어느 것이 아직 근거가 얇은지 알 수 있게 한다.
+PROVISIONAL: frozenset[str] = frozenset({
+    "interest_distance_m", "closing_rate_mps", "next_to_multiplier",
+    "window_s", "min_bearing_distance_m",
+})
+
 # 이번 범위가 실제로 내는 술어. approach는 시뮬레이션 시각이 확인되면 붙인다.
 PREDICATES: tuple[str, ...] = ("next_to", "in_front_of", "behind", "in_range_of")
 
