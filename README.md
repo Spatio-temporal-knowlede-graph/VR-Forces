@@ -160,18 +160,28 @@ build/stkg/report.md
    200~731초), 마지막 보강 교전은 시뮬레이션 시각 약 791초에 발화한다.
    그보다 일찍 멈추면 신규 교전이 하나도 관측되지 않은 채 `Fire-Weapon`
    고유 수가 70에 크게 못 미쳐, 이 보강과 무관한 이유로 인수가 실패한다.
-   최소 실행 시간은 `build/engagements/slots.jsonl`에서 직접 구한다(값은
-   빌드마다 달라질 수 있어 하드코딩하지 않는다) — 아래 명령이 그 값을
-   초 단위로 출력한다(이 저장소 기준 약 801초 ≈ 13.4분).
+   최소 실행 시간은 `build/engagements/slots.jsonl`과
+   `config/engagement_enrichment.json`에서 직접 구한다(값은 빌드마다
+   달라질 수 있어 하드코딩하지 않는다) — 아래 명령이 그 값을 초 단위로
+   출력한다(이 저장소 기준 약 806초 ≈ 13.4분). 마지막 슬롯은
+   `scheduled_time_s`에서 직접사격(`direct_fire_duration_s`)이 먼저
+   끝나야 제압사격(`suppress_duration_s`)이 시작한다(`build_engagement_steps`,
+   `vtmak/scnx/plan.py`) — 그 둘을 순서대로 더해야 마지막 슬롯의
+   제압사격이 끝나는 시각이 나온다. `max(suppress_duration_s)`만 더하면
+   직접사격의 선행 구간만큼 짧게 잡혀, 정확히 그 경계에서 멈춘 실행은
+   마지막 슬롯의 제압사격을 자른다.
 
    ```bash
    PYTHONIOENCODING=utf-8 python -c "
 import json
 rows = [json.loads(l) for l in
         open('build/engagements/slots.jsonl', encoding='utf-8') if l.strip()]
+cfg = json.load(open('config/engagement_enrichment.json', encoding='utf-8'))
 last = max(r['scheduled_time_s'] for r in rows)
+fire = cfg['direct_fire_duration_s']
 tail = max(r['suppress_duration_s'] for r in rows)
-print(f'최소 실행 시간: {last + tail}초 (마지막 슬롯 {last}초 + 제압사격 {tail}초)')
+print(f'최소 실행 시간: {last + fire + tail}초 '
+      f'(마지막 슬롯 {last}초 + 직접사격 {fire}초 + 제압사격 {tail}초)')
 "
    ```
    추출한 ground-truth CSV는 기존 명명 규칙(`*_dataset.csv`)대로
