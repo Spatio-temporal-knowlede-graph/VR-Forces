@@ -1254,21 +1254,31 @@ def validate_interaction_plan(spec: ScnxSpec,
                     'task-type "find_cover"' in step.pln:
                 out.append(Violation("G4", "C4.3",
                                      f"{oid}: 실패 task 잔존 {step.event_id}"))
-            if 'task-type "wait-duration"' in step.pln and \
-                    "(seconds-to-wait 60.000000)" in step.pln:
-                out.append(Violation("G4", "C4.8",
-                                     f"{oid}: 대기 초 미치환 {step.event_id}"))
+        # C4.4 — 사격 두 단계 인접. live 안의 **위치**로 비교한다. 슬롯으로
+        # 먼저 걸러낸 부분열에서 보면 사이에 낀 남의 task가 애초에 안 보여서,
+        # 정작 이 검사가 이름으로 내건 조건을 검사하지 못한다.
+        pos = {id(s): i for i, s in enumerate(live)}
         for slot_id in sorted({s.slot_id for s in live if s.slot_id}):
             block = [s for s in live if s.slot_id == slot_id]
-            kinds = [s.task_kind for s in block]
-            if kinds[-2:] != ["fire_direct", "suppress"]:
+            fire = [s for s in block if s.task_kind == "fire_direct"]
+            supp = [s for s in block if s.task_kind == "suppress"]
+            if len(fire) != 1 or len(supp) != 1:
                 out.append(Violation("G4", "C4.4",
-                                     f"{oid} {slot_id}: 사격 두 단계가 인접하지 "
-                                     f"않는다 {kinds}"))
+                                     f"{oid} {slot_id}: 사격 단계 수 이상 "
+                                     f"(fire {len(fire)}, suppress {len(supp)})"))
+                continue
+            if pos[id(supp[0])] != pos[id(fire[0])] + 1:
+                between = [s.task_kind for s in
+                           live[pos[id(fire[0])] + 1:pos[id(supp[0])]]]
+                out.append(Violation("G4", "C4.4",
+                                     f"{oid} {slot_id}: 사격 두 단계 사이에 "
+                                     f"{between}"))
     return out
 ```
 
-여기에 더해, 남은 자리표시자(`TARGET_UUID`, `X Y Z`, `SX SY SZ`, `AZIMUTH_RAD`, `ELEVATION_RAD`)가 살아 있는 PLN에 남아 있으면 `C4.9`로 차단한다.
+C4.8(대기 초 미치환)은 **두지 않는다.** `build_engagement_steps`가 모든 슬롯 대기에 `with_wait_seconds`를 무조건 부르고, 그 함수는 `seconds-to-wait` 자리가 없으면 예외를 던진다 — 치환이 조용히 빠지는 경로가 애초에 없으므로 이 검사가 잡겠다는 결함은 발생할 수 없다. 반대 방향은 실제로 위험하다. `wait_needed_for`가 정당하게 60초를 돌려주면 치환 결과가 템플릿 기본값과 바이트 단위로 같아져서, 옳게 계산된 빌드를 차단한다. 저작 시점의 예외가 게이트보다 강한 강제이므로 그쪽에 맡긴다.
+
+여기에 더해, 남은 자리표시자가 살아 있는 PLN에 남아 있으면 `C4.9`로 차단한다. 토큰 목록은 `plan.py`가 실제로 치환하는 것과 **같은 튜플을 import해서** 쓴다 — 목록을 두 벌 적으면 반드시 어긋난다. 실제 토큰은 다섯이 아니라 일곱이다: `TARGET_UUID`, `ENTITY_UUID`, `CONTROL_POINT_UUID`, `X Y Z`, `SX SY SZ`, `AZIMUTH_RAD`, `ELEVATION_RAD`. `_fill`은 `ref_kind`가 UUID 계열이 아닐 때 UUID 토큰을 그대로 두므로 뒤 둘도 실제로 남을 수 있다. 위반 메시지에는 어떤 토큰이 걸렸는지 넣는다.
 
 설계 §12의 나머지 두 항목은 기존 게이트가 이미 덮으므로 G4에서 다시 검사하지 않는다. 괄호 불균형은 G3의 C3.6이, "공격자에게 유효한 직접사격 무기 또는 task 템플릿이 없음"은 G3의 C3.5(`템플릿 없음` issue → BLOCK)와 C3.8(무기 실재 검사)이 잡는다. 사거리 표에 직접사거리가 없는 경우만 슬롯 선택 단계의 `no_direct_range` 거절로 걸러진다.
 
@@ -1281,9 +1291,17 @@ Task 4 gave engagement steps `slot.slot_id` as their `event_id`, so `build_rows`
 ```python
 slot = slots_by_id.get(step.slot_id) if step.slot_id else None
 if slot is not None and not ref_id:
-    ref_id = slot.target_ref if step.task_kind == "suppress" else slot.target_id
-    ref_kind = "COORD" if step.task_kind == "suppress" else "ENTITY"
+    if step.task_kind == "suppress":
+        ref_id, ref_kind = slot.target_ref, "COORD"
+    elif step.task_kind == "move" and slot.firing_ref:
+        # 슬롯의 이동은 사격 지점으로 간다. 표적 id를 넣으면 목적지를
+        # 적 객체로 적어 감사표가 거짓말을 한다.
+        ref_id, ref_kind = slot.firing_ref, "COORD"
 ```
+
+`wait` 단계에는 참조를 만들지 않는다 — `audit.py`가 이미 "참조 대상 없음"으로 다루는 종류이고, 없는 참조를 지어내면 대기 행이 적 객체를 가리킨다. `fire_direct`는 `.pln`에 UUID가 있어 `_resolve_ref`가 이미 채운다.
+
+이 수리가 실제로 검증되려면 `tests/test_audit.py`의 `built` fixture가 **보강을 켠 상태**여야 한다. 소스 슬롯만으로는 이동 단계가 없어 위 분기를 한 번도 타지 않는다.
 
 `tests/test_audit.py`의 `test_references_resolve_to_readable_names`에서 Task 4가 넣은 `suppress` 예외를 **되돌린다**. 제압사격 행도 이제 `ref_id`를 갖는다. 예외를 남겨 두면 이 수리가 됐는지 아무도 모른다.
 
