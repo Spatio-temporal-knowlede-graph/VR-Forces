@@ -207,8 +207,7 @@ def expected_suppress_spo(
 
 def _target_precheck(target_id: str, registry: dict[str, EntityDef],
                      task_counts: dict[str, int], config: EnrichmentConfig,
-                     already_engaged: set[str],
-                     target_slot_counts: dict[str, int]) -> str | None:
+                     already_engaged: set[str]) -> str | None:
     """사수와 무관한, 표적 자체의 자격 검사. 첫 실패 사유를 돌려준다.
 
     target_not_taskable은 registry의 taskable 플래그로만 판정한다. UAV와
@@ -216,6 +215,11 @@ def _target_precheck(target_id: str, registry: dict[str, EntityDef],
     scnx/fixed.py가 별도로 붙이고, 발사체는 GT 사후 확정물이라 사건 파싱
     단계에는 존재하지 않는다. 통제점은 이미 taskable=False로 들어온다
     (registry.build_registry가 layout.static_ids()로 표시).
+
+    표적당 상한(max_slots_per_target)은 여기서 검사하지 않는다 — 라운드
+    수 자체가 그 상한을 강제한다(build_enrichment_slots의 라운드 루프 주석
+    참고). 표적별 카운트를 여기서 또 세면 절대 참이 될 수 없는 분기가
+    생긴다.
     """
     target = registry[target_id]
     if not target.taskable:
@@ -230,18 +234,6 @@ def _target_precheck(target_id: str, registry: dict[str, EntityDef],
         return "target_task_count_too_high"
     if target_id in already_engaged:
         return "target_already_engaged"
-    if target_slot_counts.get(target_id, 0) >= config.max_slots_per_target:
-        # 2026-08-27 실측: build_enrichment_slots가 라운드를
-        # range(max_slots_per_target)번 돈다 — 라운드 수가 상한과 같으므로
-        # 표적 하나는 최대 상한만큼만 방문되고, 이 검사 시점의
-        # target_slot_counts는 항상 (그 표적이 지금까지 받은 라운드 수) 이하,
-        # 즉 상한 미만이다. 그래서 이 분기는 현재 설계에서 절대 참이 될 수
-        # 없다(라운드 수를 상한보다 늘리면 상한=1일 때 기존 단일 패스와
-        # 동일해야 한다는 요구와 충돌한다 — 추가 라운드가 상한=1에서도 매
-        # 표적에 새 거절을 만든다). 상한 자체는 라운드 수가 실제로
-        # 강제한다 — 아래 분기는 그 강제의 이유를 감사 기록에 남기지
-        # 못하는 채로 죽은 코드로 남아 있다.
-        return "target_cap_reached"
     return None
 
 
@@ -303,17 +295,17 @@ def build_enrichment_slots(
         if s.scheduled_time_s >= last_task_times.get(s.target_id, -1)}
 
     assigned_shooters: dict[str, int] = {oid: 0 for oid in shooter_pool}
-    target_slot_counts: dict[str, int] = {}
     accepted_pairs: set[tuple[str, str]] = set()
     accepted_spo: set[tuple[str, str]] = set()
     reserved_firing_refs: set[str] = set()
     accepted: list[EngagementSlot] = []
 
-    # 표적당 상한(max_slots_per_target)이 1보다 크면 표적 하나가 한 라운드에
-    # 하나씩, 여러 라운드에 걸쳐 슬롯을 받아야 한다. 단일 패스로는 이
-    # config 값이 아무 것도 하지 않는 죽은 설정 키가 된다(설계 스펙 §11).
-    # 라운드 수를 상한과 같게 둔다 — 그래야 상한=1일 때 기존 단일 패스와
-    # 완전히 같아진다(라운드가 하나뿐이므로).
+    # 표적당 상한(max_slots_per_target)은 이 라운드 수 자체가 강제한다 —
+    # 별도 카운터나 검사가 없다. 한 라운드는 targets를 한 바퀴 돌며 표적당
+    # 최대 슬롯 하나를 낸다(안쪽 for가 첫 통과 쌍에서 break한다). 그래서
+    # 라운드를 상한만큼 돌리면 표적 하나가 받을 수 있는 슬롯은 최대
+    # max_slots_per_target개다. 상한=1이면 라운드가 하나뿐이라 기존 단일
+    # 패스와 완전히 같다.
     reached_limit = False
     for _round in range(config.max_slots_per_target):
         if reached_limit:
@@ -324,8 +316,7 @@ def build_enrichment_slots(
                 break              # 목표 수에서 멈춘다
 
             precheck = _target_precheck(target_id, registry, task_counts,
-                                        config, already_engaged,
-                                        target_slot_counts)
+                                        config, already_engaged)
             if precheck:
                 rejected.append(SlotRejection("", target_id, precheck))
                 continue
@@ -408,8 +399,6 @@ def build_enrichment_slots(
                 assigned_shooters[shooter_id] += 1
                 accepted_pairs.add((shooter_id, target_id))
                 accepted_spo.add(spo)
-                target_slot_counts[target_id] = (
-                    target_slot_counts.get(target_id, 0) + 1)
                 break
 
             if picked is not None:

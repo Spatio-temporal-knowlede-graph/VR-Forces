@@ -255,14 +255,14 @@ def test_enrichment_rejects_targets_already_engaged_by_a_source_slot():
 
 
 def test_enrichment_round_loop_makes_duplicate_pair_reachable_at_higher_cap():
-    # 파인딩 1·2 수정: max_slots_per_target>1이면 build_enrichment_slots가
-    # 표적 목록을 그 값만큼 라운드로 돈다(단일 패스로는 이 config 값이
-    # 아무 것도 하지 않는 죽은 설정 키였다). 사수를 하나로 좁혀 두 번째
-    # 라운드도 같은 사수를 다시 시도하게 만든다 — 그래야 duplicate_pair가
-    # 실제로 재현된다. 이 시나리오에서도 target_cap_reached는 나오지
-    # 않는다: 라운드 수가 상한과 같아서 검사 시점의 카운트가 항상 상한
-    # 미만이기 때문이다(build_enrichment_slots의 _target_precheck 주석 참고
-    # — 이 상한 자체는 라운드 수가 강제하므로 결과는 여전히 옳다).
+    # max_slots_per_target>1이면 build_enrichment_slots가 표적 목록을 그
+    # 값만큼 라운드로 돈다(단일 패스로는 이 config 값이 아무 것도 하지
+    # 않는 죽은 설정 키였다). 사수를 하나로 좁혀 두 번째 라운드도 같은
+    # 사수를 다시 시도하게 만든다 — 그래야 duplicate_pair가 실제로
+    # 재현된다. 상한(2)은 그대로 지켜진다 — 라운드가 둘뿐이라 표적 하나가
+    # 받는 슬롯은 최대 하나(같은 사수가 재시도마다 duplicate_pair로
+    # 막히므로), 즉 라운드 수 자체가 상한을 강제한다는 것을 이 테스트가
+    # 보여준다.
     layout = _enrichment_layout()
     ranges = _enrichment_ranges()
     registry = {
