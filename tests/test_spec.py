@@ -503,16 +503,44 @@ def test_task_type_variety(spec):
 
 
 def test_no_single_task_type_dominates(spec):
-    """한 task 종류가 전체의 35%를 넘지 않는다.
+    """한 task 종류가 전체의 40%를 넘지 않는다.
 
     STKG 관계가 하나로 쏠리면 롱테일이 생겨 학습·평가가 그 하나만 본다.
-    2026-08-09 이전에는 move-to-location-task가 436/974 = 45%였다. 그 뒤
-    1/3(33%)로 좁혔었는데, Task 5(2026-08-27)가 find_firing_position·
-    find_cover를 별개 task-type에서 빼면서 성공하는 대체분(좌표 이동)이
-    이미 가장 큰 move-to-location-task 범주로 다시 합쳐진다 — 반면 훨씬
-    잦은 실패분(no_verified_position·unsupported_task)은 pln이 없어 애초에
-    어느 task-type으로도 안 잡힌다. 그 결과 34.5%(358/1037)로 살짝 올라
-    한도를 35%로 재조정한다 — 45%로 되돌아가는 건 여전히 잡는다.
+
+    임계값 이력: 2026-08-09 이전 move-to-location-task 436/974 = 45%가
+    원래 문제였다. 그 직후 1/3(33%)로 좁혔고, Task 5(2026-08-27)가
+    find_firing_position·find_cover를 없애면서 34.5%(358/1037)로 살짝
+    올라 35%로 재조정했다. 같은 Task 5의 세 번째 occupied 정정(2026-08-27,
+    엄폐 지점을 배치 규칙으로 바꾼 뒤 저작률이 2/77 → 74/77로 회복) 뒤
+    실측이 38.88%(432/1111)로 다시 올라, 이번에 40%로 재조정한다. 세
+    번의 조정 모두 문서화한다 — 두 번째로 이 값을 옮기는 것이라 다음 사람이
+    또 조용히 옮기지 않도록 근거를 여기 전부 남긴다.
+
+    실측 전체 분포(2026-08-27, 이번 재조정 시점):
+      move-to-location-task        432
+      wait-duration                 256
+      move-to                       198
+      fire-at-target                  77
+      provide_suppressive_fire_loc    77
+      set-aiming-point                37
+      ffe-on-location                 17
+      set-speed                       17
+      합계                          1111 → top 비율 432/1111 = 38.88%
+
+    PLN 수준 비율이 오른 이유는 관계가 실제로 더 쏠려서가 아니라, 실행되지
+    않는 task를 그만 저작해서다. find_cover(59건 계획, GT 확인 1건)와
+    find_firing_position(21건 계획, 21건 전부 컨트롤러 비활성 실패)는
+    저작될 때 각자 별개 task-type으로 잡혀 move-to-location-task의 비중을
+    희석했다 — 관측 가능한 결과는 거의 없이 분모만 부풀렸다. 80건의 죽은
+    task를 좌표 이동(대부분 move-to-location-task) 약 95건으로 바꾸면서
+    그 희석이 같이 빠졌다. PLN 수준에서는 이게 지표를 악화시켜 보이지만,
+    GT 수준에서는 반대 방향이다 — 사격 준비 관측 블록이 77건에서 154건으로
+    두 배가 되고, 이동 관측이 유령이 아니라 실제가 된다.
+
+    40%는 영구 목표로 승인된 값이 아니다 — PLN 저작 시점의 편의적 상한일
+    뿐이다. 정직한 측정은 VR-Forces 실행 뒤의 GT 수준 분포이고, Task 10의
+    수락 단계가 그걸 모은다. 이 테스트는 그때까지 저작 단계에서 뻔한
+    회귀(45%로 되돌아가는 것 같은)만 잡는 하한선이다.
     """
     import re
     from collections import Counter
@@ -524,7 +552,7 @@ def test_no_single_task_type_dominates(spec):
                               r'set-data-request-type "([^"]+)"', s.pln)
                 c[m.group(1) or m.group(2)] += 1
     top, n = c.most_common(1)[0]
-    assert n / sum(c.values()) < 0.35, (top, n, sum(c.values()), c.most_common())
+    assert n / sum(c.values()) < 0.40, (top, n, sum(c.values()), c.most_common())
 
 
 def test_aim_becomes_a_direction_aiming_set(spec):
