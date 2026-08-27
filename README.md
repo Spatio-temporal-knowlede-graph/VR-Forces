@@ -97,6 +97,8 @@ python scripts/04_compile_scnx.py
 
 ```text
 build/scnx/battle.scnx
+build/engagements/slots.jsonl   # 모든 기존·보강 교전 슬롯과 provenance
+build/engagements/audit.csv     # 채택·거절 후보와 사유
 ```
 
 G3에서는 다음 항목을 확인함.
@@ -105,6 +107,14 @@ G3에서는 다음 항목을 확인함.
 - golden에 동일 DIS 엔티티가 있는지
 - 좌표·UUID·PLN 문법의 정상 여부
 - task가 참조하는 객체와 템플릿의 존재 여부
+
+G4(`validate_interaction_plan`)에서는 다음 항목을 확인함.
+
+- 교전 슬롯 id·(사수, 표적) 쌍 중복 없음, 같은 진영 교전 없음
+- 원문 슬롯 77개, 신규 슬롯이 설정된 하한·상한 범위 안
+- 무기한 `follow-entity` 뒤에 후속 task 없음, `find_firing_position`·
+  `find_cover`가 최종 PLN에 남지 않음, 자리표시자 미치환 없음
+- 한 슬롯의 직접사격과 제압사격이 바로 인접함
 
 ## 6. 데이터 후처리
 
@@ -144,13 +154,49 @@ build/stkg/report.md
 
 1. `build/scnx/battle.scnx`를 VR-Forces에서 연다. **Ground Clamping**을 켜고
    Cutoff Distance Scale을 최대로 둔다(아래 실행 순서 절 참고).
-2. 시나리오를 끝까지 실행하고, 추출한 새 ground-truth CSV를 기존 명명 규칙
-   (`*_dataset.csv`)대로 `build/csv/` 아래에 저장한다.
+2. **시나리오를 최소 실행 시간 이상 실행한다.** VR-Forces 시나리오에는
+   종료 조건이 없어 "끝까지"는 관측 가능한 기준이 아니다 — 102개 교전
+   슬롯 전부가 합성 `wait-duration` 뒤에서 시작하고(측정된 슬롯 대기는
+   200~731초), 마지막 보강 교전은 시뮬레이션 시각 약 791초에 발화한다.
+   그보다 일찍 멈추면 신규 교전이 하나도 관측되지 않은 채 `Fire-Weapon`
+   고유 수가 70에 크게 못 미쳐, 이 보강과 무관한 이유로 인수가 실패한다.
+   최소 실행 시간은 `build/engagements/slots.jsonl`에서 직접 구한다(값은
+   빌드마다 달라질 수 있어 하드코딩하지 않는다) — 아래 명령이 그 값을
+   초 단위로 출력한다(이 저장소 기준 약 801초 ≈ 13.4분).
+
+   ```bash
+   PYTHONIOENCODING=utf-8 python -c "
+import json
+rows = [json.loads(l) for l in
+        open('build/engagements/slots.jsonl', encoding='utf-8') if l.strip()]
+last = max(r['scheduled_time_s'] for r in rows)
+tail = max(r['suppress_duration_s'] for r in rows)
+print(f'최소 실행 시간: {last + tail}초 (마지막 슬롯 {last}초 + 제압사격 {tail}초)')
+"
+   ```
+   추출한 ground-truth CSV는 기존 명명 규칙(`*_dataset.csv`)대로
+   `build/csv/` 아래에 저장한다.
 3. `PYTHONIOENCODING=utf-8 python scripts/05_data_postprocessing.py`를
    실행한다. exit 0을 확인한다(0이 아니면 행 회계가 안 맞는 입력이 있다는
    뜻이라 원본 CSV를 먼저 의심한다).
 4. `build/stkg/*_annotated.csv`에서 고유 `(subject, predicate, object)`
-   삼중항 수를 predicate별로 센다.
+   삼중항 수를 predicate별로 센다. 바로 실행 가능한 명령:
+
+   ```bash
+   PYTHONIOENCODING=utf-8 python -c "
+import csv, glob, collections
+triples = collections.Counter()
+for path in glob.glob('build/stkg/*_annotated.csv'):
+    with open(path, encoding='utf-8', newline='') as f:
+        for row in csv.DictReader(f):
+            triples[(row['predicate'], row['subject'], row['object'])] += 1
+by_predicate = collections.Counter()
+for predicate, _s, _o in triples:
+    by_predicate[predicate] += 1
+for predicate, n in sorted(by_predicate.items()):
+    print(f'{predicate}: {n}')
+"
+   ```
 5. **판정 기준(둘 다 충족해야 통과):**
    - 고유 `Fire-Weapon` SPO ≥ 70
    - 고유 `Provide-Suppressive-Fire-Loc` SPO ≥ 70
@@ -160,7 +206,7 @@ build/stkg/report.md
    아니다. 5번의 판정은 오직 고유 SPO 수로만 한다.
 7. CSV에 나타나지 않은(관측되지 않은) `slot_id`가 있으면
    `build/engagements/audit.csv`(102 accepted · 80 rejected, 이 저장소
-   기준값)와 대조한다.
+   기준값 — 빌드마다 달라질 수 있으니 재확인할 것)와 대조한다.
    - 그 `slot_id`가 애초에 `audit.csv`에 없거나 `status=rejected`면 —
      컴파일 시점에 저작되지 않은 것이 정상이라 통과에 영향 없다.
    - `status=accepted`인데 CSV에 관측이 없으면 — 저작된 task가 VR-Forces에서
@@ -170,6 +216,15 @@ build/stkg/report.md
      완화하기 전에 반드시 이 로그부터 확보한다.
 8. UAV 검출률(관측이 실제로 잡힌 슬롯의 비율)은 측정은 하되 **이번 인수의
    합격 판정에는 쓰지 않는다** — 합격 기준은 5번의 두 SPO 문턱뿐이다.
+9. **`build/timetable/battle_control_points.csv`는 이번 빌드에서
+   재번호화됐다.** `find_firing_position`·`find_cover`를 좌표 이동으로
+   대체하면서 참조되지 않는 통제점 6개가 빠졌고, 남은 통제점들의 `P{k}`
+   번호도 그만큼 밀렸다 — 예를 들어 예전 `P1`(`LOC_남측제1방어선`)이 지금은
+   `LOC_동측능선`이다. `scripts/05_data_postprocessing.py`가 이 표로
+   `P{k}` 마킹을 지명으로 되돌리므로, **이전 빌드(구 통제점 표)에서 수집한
+   ground-truth CSV를 이번(신규 표) 후처리에 절대 재사용하지 말 것** — 오류
+   없이 조용히 잘못된 지명으로 라벨링된다. 이번 실행에서 새로 뽑은
+   CSV만 3번 단계에 넣는다.
 
 ## 실행 순서
 
@@ -221,6 +276,7 @@ golden은 세 가지를 준다: **지명 통제점 23개의 실좌표**, 엔티�
 | `task_catalog.csv` | (type_group, 행동) → `.pln` S-expression 템플릿 |
 | `derive_rules.csv` | 파생 관계 규칙 R2–R4·R7의 상태 매핑·플래그 |
 | `placement_rules.csv` | **타입별 최소 이격거리 + 지명별 대형(선형·격자·종대)** |
+| `engagement_enrichment.json` | 교전 슬롯 보강 수·상한, 사격·엄폐·대기 지속시간, 이동예산 |
 
 어휘를 코드에 하드코딩하지 않는다. 지명·모델·사거리·술어는 전부 여기서 온다.
 
@@ -727,9 +783,12 @@ VR-Forces에서 직접 얹는다(2026-08-03 결정).
 | G1 | 3,000문장 전부 매칭 | 위반 0 |
 | G2 | task 가능 객체 전원 플랜 보유 | 위반 0 |
 | G3 | DIS·좌표·uuid·괄호·참조·**무기 실재** 정합성 | 차단 0 · 보고 46 |
+| G4 | 교전 슬롯·큐 도달 가능성(슬롯 중복·같은 진영·상한·follow 종단·`find_*` 잔존·자리표시자·사격 두 단계 인접) | 차단 0 |
 
 `severity`가 `BLOCK`인 위반만 파이프라인을 멈춘다. `REPORT`는 사람이 알아야
-하지만 산출을 막지 않는 사실이다.
+하지만 산출을 막지 않는 사실이다. G4는 전부 `BLOCK`이다 — "이 큐가
+VR-Forces에서 끝까지 도는가"를 정적으로 보장하는 게이트라 REPORT로 완화할
+여지가 없다(`vtmak/scnx/gates.py::validate_interaction_plan`).
 
 G0 보고 12건: 최소사거리 미달 2(`C0.1` — 155mm·박격포가 중앙 킬존을 치는
 1건씩) · Patriot 미확인 2(`C0.3`) · 지형 미확인 8(`C0.7` — 파생 6 + 이동 2).
