@@ -31,3 +31,41 @@ def judge_next_to(distance: float, a: EntityProfile | None,
     if a is None or b is None:
         return False
     return distance <= next_to_threshold(a, b, thresholds)
+
+
+def relative_bearing_deg(heading_deg: float, bearing_deg: float) -> float:
+    """bearing을 heading 기준으로 본 각도. (-180, 180].
+
+    정반대는 -180이 아니라 +180이다. 두 값이 갈리면 behind 경계가 한쪽에서만
+    성립한다.
+    """
+    value = (bearing_deg - heading_deg) % 360.0
+    return value - 360.0 if value > 180.0 else value
+
+
+def judge_direction(distance: float, relative_bearing: float | None,
+                    thresholds: Thresholds) -> str | None:
+    """'in_front_of' 또는 'behind' 또는 None.
+
+    relative_bearing은 호출부가 목적어 기준으로 계산해 넘긴다:
+    relative_bearing_deg(목적어 heading, bearing(목적어 → 주어)).
+    (A, in_front_of, B)는 B의 프레임에서 판정한다. A의 방위는 쓰지 않는다.
+
+    측면 90° 두 구간은 의도적으로 아무것도 내지 않는다. 좌우는 범위 밖이라
+    빔 방향의 쌍은 방향 관계가 없다 — 가까운 쪽으로 우겨 넣으면 안 된다.
+
+    좌표가 겹친 쌍도 아무것도 내지 않는다. 같은 자리에서는 방위가 정의되지
+    않고, 부동소수 잔차가 사분면을 무작위로 고른다.
+    """
+    if relative_bearing is None:
+        return None
+    if distance < thresholds.min_bearing_distance_m:
+        return None
+    if distance > thresholds.interest_distance_m:
+        return None
+    offset = abs(relative_bearing)
+    if offset <= thresholds.front_sector_deg:
+        return "in_front_of"
+    if offset > thresholds.behind_sector_deg:
+        return "behind"
+    return None
