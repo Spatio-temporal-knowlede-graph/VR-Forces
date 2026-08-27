@@ -249,16 +249,28 @@ def build_rows(spec: ScnxSpec, contents: ScnxContents, kinds: TaskKinds,
                 # — 예전 배타 저작 시절엔 실제 event를 달고 있어
                 # _event_ref가 e.target을 복구했다). slot_id가 있으면
                 # 슬롯 자체에서 직접 참조를 푼다.
+                #
+                # Task 6 리뷰 라운드 1 finding 2가 잡은 회귀: move·fire_direct
+                # 는 각각 intent_object·uuid로 이미 채워지므로 이 분기는
+                # 실제로 wait에만 도달했었다 — wait는 참조_필드가 없는
+                # kind라 audit.py 자신의 규칙상 참조가 없는 게 맞는데,
+                # slot.target_id(적 객체)를 지어내 붙이고 있었다. 반대로
+                # 이 분기가 실제로 필요한 경우(firing_ref로 이동하는 슬롯의
+                # move 단계)는 intent_object 경로가 먼저 채우고 있어서
+                # 오히려 여기 안 왔다 — 그런데 그 intent_object 값도
+                # slot.target_id(적 객체)라 "사격 지점으로 이동"이 적 객체를
+                # 가리키는 거짓 참조가 됐다. move는 firing_ref(사격 지점
+                # 지명)를 써야 맞는다.
                 ref_id = (_event_ref(by_event.get(step.event_id),
                                      step.task_kind, kinds)
                          or step.intent_object)
                 ref_kind = "COORD" if ref_id else ""
                 slot = slots_by_id.get(step.slot_id) if step.slot_id else None
-                if slot is not None and not ref_id:
-                    ref_id = (slot.target_ref if step.task_kind == "suppress"
-                             else slot.target_id)
-                    ref_kind = "COORD" if step.task_kind == "suppress" \
-                        else "ENTITY"
+                if slot is not None:
+                    if step.task_kind == "suppress":
+                        ref_id, ref_kind = slot.target_ref, "COORD"
+                    elif step.task_kind == "move" and slot.firing_ref:
+                        ref_id, ref_kind = slot.firing_ref, "COORD"
             rows.append(TaskRow(
                 object_id=e.object_id, name=e.name, faction=e.faction,
                 entity_class=e.entity_class, type_group=e.type_group,

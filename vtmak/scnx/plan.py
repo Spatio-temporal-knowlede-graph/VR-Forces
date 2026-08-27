@@ -45,6 +45,13 @@ SUPPLY_SPEED_MPS = 8.0
 # 속도만 값을 코드에서 정한다. 나머지 동반 행동은 템플릿을 그대로 쓴다.
 SPEED_LABEL = "속도 지정"
 
+# _fill이 채울 수 있는 자리표시자 전체 집합(일곱). _companion이 _fill을 부를지
+# 판단할 때와 gates.py의 G4(C4.9)가 살아 있는 PLN에 남은 게 있는지 볼 때 모두
+# 이 하나를 쓴다 — 목록을 두 벌 적으면 반드시 어긋난다(Task 6 리뷰 라운드 1
+# finding 4: G4가 다섯 개만 보고 ENTITY_UUID·CONTROL_POINT_UUID를 놓쳤다).
+PLACEHOLDER_TOKENS = ("TARGET_UUID", "ENTITY_UUID", "CONTROL_POINT_UUID",
+                     "X Y Z", "SX SY SZ", "AZIMUTH_RAD", "ELEVATION_RAD")
+
 
 class PlanContext(Protocol):
     """spec.py가 주입하는 uuid·좌표·ref_kind 해석기.
@@ -288,9 +295,7 @@ def _companion(e: Event, entity: EntityDef, kind: str, label: str,
     if label == SPEED_LABEL:
         # 저속 보급 기동. 템플릿의 기본 속도(100km/h)를 낮춘다.
         pln = pln.replace("(speed 27.777778)", f"(speed {SUPPLY_SPEED_MPS:.6f})")
-    if any(tok in pln for tok in ("TARGET_UUID", "ENTITY_UUID",
-                                  "CONTROL_POINT_UUID", "X Y Z", "SX SY SZ",
-                                  "AZIMUTH_RAD", "ELEVATION_RAD")):
+    if any(tok in pln for tok in PLACEHOLDER_TOKENS):
         pln, refs = _fill(pln, ref_kind, ref, ctx, self_coord,
                           time_s=e.time_s, actor=e.actor)
         pln = with_weapon(pln, entity.weapons)

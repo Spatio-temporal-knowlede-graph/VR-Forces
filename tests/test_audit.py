@@ -80,6 +80,13 @@ def test_hhmmss():
 
 @pytest.fixture(scope="module")
 def built(tmp_path_factory):
+    """보강을 켠 채로 만든다(Task 6 리뷰 라운드 1 finding 2).
+
+    끈 채로는(원문 슬롯만) firing_ref로 이동하는 슬롯 move 단계가 하나도
+    없어 그 참조 복구 분기를 한 번도 타지 않는다 — 그 상태에서는
+    test_references_resolve_to_readable_names의 moves LOC_ 접두 단언이
+    통과해도 그 분기가 실제로 옳은지 아무것도 증명하지 못했다.
+    """
     cfg = ROOT / "config"
     pm = PatternMap.load(cfg / "pattern_map.csv")
     res = parse_scenario(
@@ -96,7 +103,8 @@ def built(tmp_path_factory):
                       TaskCatalog.load(cfg / "task_catalog.csv"),
                       kinds,
                       DisCatalog.load(cfg / "dis_catalog.csv"),
-                      WeaponRanges.load(cfg / "weapon_ranges.csv"), "battle")
+                      WeaponRanges.load(cfg / "weapon_ranges.csv"), "battle",
+                      enrichment_config=EnrichmentConfig.defaults())
     scnx = get_writer("template", str(GOLDEN)).write(
         spec, tmp_path_factory.mktemp("scnx"))
     return spec, read_scnx(scnx), events, kinds
@@ -167,6 +175,13 @@ def test_references_resolve_to_readable_names(built):
     suppress를 더 이상 예외로 두지 않는다(Task 6) — build_rows가 이제
     step.slot_id로 슬롯을 직접 찾아 target_ref(제압사격의 좌표 목표)를
     되살린다. 예외를 남겨 두면 이 수리가 실제로 됐는지 아무도 모른다.
+
+    built는 보강을 켠 채로 만든다(리뷰 라운드 1 finding 2) — firing_ref로
+    이동하는 슬롯 move 단계는 신규 교전에만 나온다(원문 슬롯은 항상 제자리
+    사격, firing_ref=""). 그 참조 복구 분기가 실제로 옳은지는 보강이 켜져
+    있어야만 증명된다. moves의 개수를 못 박지 않는다 — 사격 위치가
+    사거리 안이면 이동 없이 제자리 사격이라 firing_ref가 비고, 몇 건이
+    이동을 필요로 하는지는 배치·사거리에 좌우된다(실측 회귀: 25건 중 5건).
     """
     spec, contents, events, kinds = built
     tasks, _, _ = build_rows(spec, contents, kinds, events)
@@ -181,10 +196,24 @@ def test_references_resolve_to_readable_names(built):
     assert all(t.ref_kind == "COORD" for t in cover), (
         "좌표 이동은 통제점·엔티티 uuid가 아니라 intent_object로 참조를 남긴다")
     # 제압사격도 이제 슬롯에서 참조를 되살린다(Task 6 리페어) — 좌표
-    # task라 .pln에 uuid가 없으므로 ref_kind는 COORD여야 한다.
+    # task라 .pln에 uuid가 없으므로 ref_kind는 COORD여야 한다. 개수는
+    # spec.engagement_slots(source + enrichment)와 정확히 맞아야 한다 —
+    # 하드코딩한 77은 보강이 켜진 뒤로는 더 이상 맞는 숫자가 아니다.
     suppress = [t for t in live if t.task_kind == "suppress"]
-    assert len(suppress) == 77, len(suppress)
+    assert len(suppress) == len(spec.engagement_slots), \
+        (len(suppress), len(spec.engagement_slots))
     assert all(t.ref_kind == "COORD" for t in suppress)
+
+    # 사격 위치 슬롯 move는 정확히 firing_ref로 간다 — 되살린 target_id(적
+    # 객체)로 새지 않는다(finding 2가 잡은 회귀). firing_ref가 있는
+    # 슬롯이 이 시나리오에 실제로 있어야 이 assert가 뭔가 검증한다.
+    firing_refs = {s.firing_ref for s in spec.engagement_slots if s.firing_ref}
+    target_ids = {s.target_id for s in spec.engagement_slots}
+    assert firing_refs, "firing_ref가 있는 슬롯이 하나도 없다"
+    move_refs = {t.ref_id for t in moves}
+    assert move_refs & firing_refs, "슬롯 이동이 firing_ref로 저작되지 않는다"
+    assert not (move_refs & target_ids), \
+        "슬롯 이동이 표적 객체 id를 참조로 쓴다(적을 향한 거짓 참조)"
 
 
 def test_coordinate_tasks_need_the_events_to_name_their_target(built):
@@ -221,6 +250,21 @@ def _fire_step(oid, event_id, slot_id="SRC-E2"):
                     '(max-rounds-to-fire 1))')
     step.slot_id = slot_id
     return step
+
+
+def _suppress_step(oid, event_id, slot_id="SRC-E2"):
+    step = PlanStep(event_id, 20, "directFireAt", "suppress",
+                    "제압사격",
+                    '(Task (task-type "provide_suppressive_fire_loc") '
+                    '(durationTotal 10.000000))')
+    step.slot_id = slot_id
+    return step
+
+
+def _foreign_step(oid, event_id):
+    """같은 사수의 다른(슬롯 없는) task — 사격 두 단계 사이에 끼워 넣는다."""
+    return PlanStep(event_id, 15, "moveTo", "move", "이동",
+                    '(Task (task-type "move-to-location-task") )')
 
 
 def _synthetic_spec(steps=(), slots=()):
@@ -261,3 +305,22 @@ def test_same_faction_slot_is_blocked():
     assert any(x.code == "C4.5"
                for x in validate_interaction_plan(
                    spec, EnrichmentConfig.defaults()))
+
+
+def test_foreign_task_between_fire_and_suppress_is_blocked():
+    """C4.4 리뷰 라운드 1 finding 1의 회귀 재현.
+
+    slot_id로 먼저 걸러낸 부분열끼리 kinds[-2:]를 비교하면, fire_direct와
+    suppress 사이에 낀 남의 task(여기서는 슬롯 없는 move)가 필터링 단계에서
+    이미 사라져 있어 검사가 절대 실패하지 않았다 — 부분열은 몇 개든 항상
+    자기 자신의 마지막 두 원소로 끝난다. live 안의 위치를 직접 비교해야
+    실제 인접 여부를 본다.
+    """
+    spec = _synthetic_spec(steps=[
+        _fire_step("O1", "E1", slot_id="ENR-000"),
+        _foreign_step("O1", "E2"),
+        _suppress_step("O1", "E3", slot_id="ENR-000"),
+    ])
+    v = validate_interaction_plan(spec, EnrichmentConfig.defaults())
+    assert any(x.code == "C4.4" and "O1" in x.detail and "ENR-000" in x.detail
+               and "move" in x.detail for x in v), v

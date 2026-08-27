@@ -22,7 +22,7 @@ from ..registry import UNCLASSIFIED
 from .catalog import DisCatalog
 from .engagements import EnrichmentConfig, expected_suppress_spo
 from .golden import Golden
-from .plan import balanced
+from .plan import PLACEHOLDER_TOKENS, balanced
 from .spec import ScnxSpec
 
 
@@ -132,19 +132,21 @@ def check_g3(spec: ScnxSpec, golden: Golden,
     return out
 
 
-# _fill(plan.py)·with_wait_seconds가 채우지 못하고 살아 있는 PLN에 남길 수
-# 있는 자리표시자. 괄호 불균형은 C3.6(위)이 이미 잡으므로 여기서 다시
-# 검사하지 않는다(설계 §12).
-_PLACEHOLDERS = ("TARGET_UUID", "X Y Z", "SX SY SZ", "AZIMUTH_RAD",
-                "ELEVATION_RAD")
-
-
 def validate_interaction_plan(spec: ScnxSpec,
                               config: EnrichmentConfig) -> list[Violation]:
     """G4 — 교전 슬롯과 큐 도달 가능성.
 
     G3가 '파일이 말이 되는가'라면 G4는 '이 큐가 VR-Forces에서 끝까지
     도는가'다. 여기서 잡히는 것들은 전부 실행 로그에서만 보이던 실패였다.
+
+    C4.8(대기 초 미치환)은 두지 않는다 — Task 6 리뷰 라운드 1 finding 3.
+    build_engagement_steps가 모든 슬롯 대기에 with_wait_seconds를
+    무조건 부르고, 그 함수는 seconds-to-wait 자리가 없으면 예외를
+    던진다(plan.py). 치환이 조용히 빠지는 경로가 애초에 없으므로 이
+    검사가 잡겠다는 결함은 발생할 수 없다. 반대 방향은 실제로 위험하다 —
+    wait_needed_for가 정당하게 60초를 돌려주면 치환 결과가 템플릿
+    기본값과 바이트 단위로 같아져서, 옳게 계산된 빌드를 차단한다.
+    저작 시점의 예외가 게이트보다 강한 강제이므로 그쪽에 맡긴다.
     """
     out: list[Violation] = []
     seen_slot_ids: set[str] = set()
@@ -168,14 +170,18 @@ def validate_interaction_plan(spec: ScnxSpec,
     added = [s for s in spec.engagement_slots if s.origin == "enrichment"]
     if len(source) != 77:
         out.append(Violation("G4", "C4.6", f"원문 교전 슬롯 {len(source)}개 (77 기대)"))
-    if not (config.min_new_unique_pairs <= len(added)
-            <= config.max_new_unique_pairs):
-        out.append(Violation("G4", "C4.6", f"신규 교전 슬롯 {len(added)}개"))
-    spo = expected_suppress_spo(tuple(spec.engagement_slots))
-    if len(spo) < config.min_expected_suppress_spo:
-        out.append(Violation("G4", "C4.7",
-                             f"예상 고유 제압사격 SPO {len(spo)}개 "
-                             f"({config.min_expected_suppress_spo} 미만)"))
+    # enabled=False는 '보강을 끈다'는 정상 설정이지, 결함이 아니다 — 그때는
+    # added=0이 기대값이므로 하한·SPO 검사 둘 다 건너뛴다(Task 6 리뷰 라운드
+    # 1 minor: 끄면 컴파일이 실패하던 회귀).
+    if config.enabled:
+        if not (config.min_new_unique_pairs <= len(added)
+                <= config.max_new_unique_pairs):
+            out.append(Violation("G4", "C4.6", f"신규 교전 슬롯 {len(added)}개"))
+        spo = expected_suppress_spo(tuple(spec.engagement_slots))
+        if len(spo) < config.min_expected_suppress_spo:
+            out.append(Violation("G4", "C4.7",
+                                 f"예상 고유 제압사격 SPO {len(spo)}개 "
+                                 f"({config.min_expected_suppress_spo} 미만)"))
 
     for oid, steps in sorted(spec.entity_plans.items()):
         live = [s for s in steps if s.pln]
@@ -189,24 +195,37 @@ def validate_interaction_plan(spec: ScnxSpec,
                     'task-type "find_cover"' in step.pln:
                 out.append(Violation("G4", "C4.3",
                                      f"{oid}: 실패 task 잔존 {step.event_id}"))
-            # C4.8은 slot_id가 붙은 대기 단계만 본다 — stopAt/stayAt 원문
-            # 대기는 task_kind=wait이지만 slot_id가 없고, 수확된 기본
-            # 60초를 그대로 쓰는 게 정상이다(전역 제약은 '유한하고 양수'만
-            # 요구하고 60.0은 그 조건을 만족한다). slot 대기만 실제로
-            # with_wait_seconds가 치환해야 하는 합성 값이라, 60.000000이
-            # 남아 있으면 그 치환이 빠졌다는 결함 신호다.
-            if step.slot_id and 'task-type "wait-duration"' in step.pln and \
-                    "(seconds-to-wait 60.000000)" in step.pln:
-                out.append(Violation("G4", "C4.8",
-                                     f"{oid}: 대기 초 미치환 {step.event_id}"))
-            if any(tok in step.pln for tok in _PLACEHOLDERS):
-                out.append(Violation("G4", "C4.9",
-                                     f"{oid}: 자리표시자 미치환 {step.event_id}"))
+            # 살아 있는 PLN에 자리표시자가 남으면 안 된다. 토큰 목록은
+            # plan.py가 실제로 채우는 것과 같은 튜플이다(따로 두면 어긋난다
+            # — Task 6 리뷰 라운드 1 finding 4: 다섯 개만 보다가
+            # ENTITY_UUID·CONTROL_POINT_UUID 두 개를 놓쳤다). 어느 토큰이
+            # 걸렸는지 메시지에 남겨 grep 없이 바로 보이게 한다.
+            for tok in PLACEHOLDER_TOKENS:
+                if tok in step.pln:
+                    out.append(Violation(
+                        "G4", "C4.9",
+                        f"{oid}: 자리표시자 미치환 {tok} {step.event_id}"))
+        # C4.4 — 사격 두 단계 인접. live 안의 **위치**로 비교한다(Task 6
+        # 리뷰 라운드 1 finding 1). slot_id로 먼저 걸러낸 부분열끼리
+        # kinds[-2:]를 비교하면, 그 사이에 낀 남의 task가 필터링 단계에서
+        # 이미 사라져 있어 정작 이 검사가 이름으로 내건 '인접하지 않는다'는
+        # 조건을 검사하지 못한다 — 부분열은 원소가 몇 개든 항상 자기 자신의
+        # 마지막 두 원소로 끝나므로 kinds[-2:]는 절대 실패하지 않았다.
+        pos = {id(s): i for i, s in enumerate(live)}
         for slot_id in sorted({s.slot_id for s in live if s.slot_id}):
             block = [s for s in live if s.slot_id == slot_id]
-            kinds = [s.task_kind for s in block]
-            if kinds[-2:] != ["fire_direct", "suppress"]:
-                out.append(Violation("G4", "C4.4",
-                                     f"{oid} {slot_id}: 사격 두 단계가 인접하지 "
-                                     f"않는다 {kinds}"))
+            fire = [s for s in block if s.task_kind == "fire_direct"]
+            supp = [s for s in block if s.task_kind == "suppress"]
+            if len(fire) != 1 or len(supp) != 1:
+                out.append(Violation(
+                    "G4", "C4.4",
+                    f"{oid} {slot_id}: 사격 단계 수 이상 "
+                    f"(fire {len(fire)}, suppress {len(supp)})"))
+                continue
+            if pos[id(supp[0])] != pos[id(fire[0])] + 1:
+                between = [s.task_kind for s in
+                          live[pos[id(fire[0])] + 1:pos[id(supp[0])]]]
+                out.append(Violation(
+                    "G4", "C4.4",
+                    f"{oid} {slot_id}: 사격 두 단계 사이에 {between}"))
     return out

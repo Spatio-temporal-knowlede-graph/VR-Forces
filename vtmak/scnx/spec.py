@@ -347,9 +347,15 @@ _SLOT_PHASE_ORDER = {"move": 0, "wait": 1, "fire_direct": 2, "suppress": 3}
 
 
 def _slot_phase(step: PlanStep) -> int:
+    """슬롯이 아니면 -1. 동반 행동(`기반kind:행동`)은 콜론 앞만 본다 —
+    안 그러면 예컨대 'suppress:방향 조준'이 알 수 없는 키로 기본값 0에
+    떨어져 제압사격의 동반 행동이 블록 맨 앞(move 자리)으로 튀어 오른다.
+    오늘은 move/wait/fire_direct/suppress 중 어느 것도 동반 행동을 선언하지
+    않아 잠들어 있지만, task_kinds.csv에 후행_행동을 다는 패턴 자체는
+    Task 5가 move_cover에 이미 썼다(Task 6 리뷰 라운드 1 minor)."""
     if not step.slot_id:
         return -1
-    return _SLOT_PHASE_ORDER.get(step.task_kind, 0)
+    return _SLOT_PHASE_ORDER.get(step.task_kind.split(":")[0], 0)
 
 
 def build_spec(events: list[Event], registry: dict[str, EntityDef],

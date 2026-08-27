@@ -20,17 +20,18 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _build(inputs):
-    # Global memory #3: enrichment_config를 안 주면 spec.engagement_slots가
-    # source 77건뿐이라 이 파일의 20~30건 보강 단언이 전부 빈 집합을 본다.
+    # enrichment_config를 안 주면 spec.engagement_slots가 source 77건뿐이라
+    # 이 파일의 20~30건 보강 단언이 전부 빈 집합을 본다.
     return build_spec(**inputs, enrichment_config=EnrichmentConfig.defaults())
 
 
-@pytest.fixture(scope="module")
-def full_build_inputs():
-    """_build()가 build_spec에 넘기는 인자들을 dict로 돌려준다.
+def _parse_build_inputs() -> dict:
+    """원문을 처음부터 다시 파싱·명부 감축해 build_spec 인자 9개를 만든다.
 
-    _build()와 이 fixture가 서로 다른 구성 경로를 갖지 않도록(따로 두면
-    언젠가 어긋난다) 파싱·명부 감축 로직은 여기 한 곳에만 둔다.
+    호출할 때마다 SCENARIO를 새로 읽고 새로 파싱한다 — 캐시하지 않는다.
+    full_build_inputs 픽스처(모듈 스코프, 한 번만 파싱)와 test_spec_is_
+    deterministic(두 번째 독립 파싱이 필요하다, 아래 참고)가 이 하나를
+    공유해서 두 구성 경로가 갈라지지 않게 한다.
     """
     cfg = ROOT / "config"
     pm = PatternMap.load(cfg / "pattern_map.csv")
@@ -53,6 +54,12 @@ def full_build_inputs():
                dis=DisCatalog.load(cfg / "dis_catalog.csv"),
                ranges=WeaponRanges.load(cfg / "weapon_ranges.csv"),
                scenario_id="battle")
+
+
+@pytest.fixture(scope="module")
+def full_build_inputs():
+    """_build()가 build_spec에 넘기는 인자들을 dict로 돌려준다(한 번만 파싱)."""
+    return _parse_build_inputs()
 
 
 @pytest.fixture(scope="module")
@@ -799,8 +806,12 @@ def test_uuids_are_unique(spec):
     assert len(uids) == len(set(uids))
 
 
-def test_spec_is_deterministic(spec, full_build_inputs):
-    other = _build(full_build_inputs)
+def test_spec_is_deterministic(spec):
+    # full_build_inputs를 재사용하면 build_spec의 입력 불변성(events를
+    # 바꾸지 않는가)만 검증하고, 파싱·명부 감축까지 포함한 진짜 결정성은
+    # 놓친다 — 두 번째 실행은 처음부터 다시 파싱한다(Task 6 리뷰 라운드 1
+    # minor: fixture 리팩터로 이 커버리지가 조용히 좁아졌었다).
+    other = _build(_parse_build_inputs())
     assert [(e.object_id, e.uuid, e.coord.as_tuple()) for e in spec.entities] == \
            [(e.object_id, e.uuid, e.coord.as_tuple()) for e in other.entities]
     assert [(c.ref_id, c.uuid) for c in spec.control_objects] == \
