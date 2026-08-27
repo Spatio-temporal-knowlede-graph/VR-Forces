@@ -74,13 +74,22 @@ def test_ffe_becomes_ffe_on_location_with_the_target_place(layout):
 
 def test_rewrite_names_suppressive_fire_without_suppresses(layout):
     """§9.2: GT는 시뮬레이터가 직접 보고한 위치 태스크만 담는다 — 옛 이름
-    `suppresses`가 암시하던 객체 효과는 관측된 적이 없다."""
-    raw = ("provide_suppressive_fire_loc: "
-           "targetLocation={1.0, 2.0, 3.0}")
-    rows = [_row("FRINF001", raw, _at(layout, "LOC_중앙킬존"))]
+    `suppresses`가 암시하던 객체 효과는 관측된 적이 없다.
+
+    §13 검증 계약(`Provide-Suppressive-Fire-Loc 정규화와 좌표 snap`)의
+    snap 절반을 확인한다 — targetLocation을 스냅 가능한 golden 좌표로
+    줘서 FFE 테스트(test_ffe_becomes_ffe_on_location_with_the_target_place)
+    와 같은 패턴으로 object가 정확히 그 지명이 되는지 본다. Fix 1(엄폐
+    이격 폐기) 뒤로는 snap이 슬롯 좌표 102개를 이름 있는 소수의 객체로
+    묶는 유일한 장치라 이 술어에서도 반드시 검증해야 한다.
+    """
+    lid = "LOC_중앙킬존"
+    raw = (f"provide_suppressive_fire_loc: "
+           f"targetLocation={_ecef_blob(layout, lid)}")
+    rows = [_row("FRINF001", raw, _at(layout, "LOC_동측능선"))]
     out, _, _, tally = rewrite(rows, layout)
     assert out[0]["predicate"] == "Provide-Suppressive-Fire-Loc"
-    assert out[0]["object"]
+    assert out[0]["object"] == lid
     assert "suppresses" not in tally.predicates
 
 
