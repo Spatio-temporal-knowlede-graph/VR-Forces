@@ -75,11 +75,24 @@ def _frames(rows: Iterator[dict[str, str]]
 
 def _build(timestamp: str, rows: list[dict[str, str]], index: ProfileIndex,
            log: QualityLog) -> tuple[list[Placement], set[frozenset[str]]]:
+    """이 시각의 placements와 활성 Follow 쌍을 만든다.
+
+    입력은 팩트 CSV라 한 엔티티가 한 시각에 여러 행을 갖는 게 정상이다 —
+    `move to`, `Follow-Entity` 등 팩트마다 행이 하나다. 실측 평균 3.4행/엔티티다.
+    쌍 판정은 subject 하나면 충분하므로 행마다 Placement를 새로 만들면 모든
+    쌍이 그만큼 배로 평가된다(§4). Placement는 subject당 하나만 만들고(첫 행이
+    이긴다), Follow-Entity 탐지만 모든 행을 계속 훑는다 — 그 팩트가 흔히 다른
+    행에 있기 때문이다.
+    """
     placements: list[Placement] = []
+    seen_subjects: set[str] = set()
     follow: set[frozenset[str]] = set()
     for row in rows:
         if row["predicate"] == "Follow-Entity" and row["object"]:
             follow.add(frozenset({row["subject"], row["object"]}))
+        if row["subject"] in seen_subjects:
+            continue
+        seen_subjects.add(row["subject"])
         heading = row["heading"].strip()
         force = row["force"].strip()
         if not force:

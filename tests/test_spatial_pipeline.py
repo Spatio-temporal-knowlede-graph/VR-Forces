@@ -138,6 +138,25 @@ def test_blank_force_suppresses_in_range_of_but_still_reports_it(run):
     assert "MISSING_FORCE" in qual.read_text(encoding="utf-8")
 
 
+def test_duplicate_rows_for_one_subject_match_a_single_row_per_subject(run):
+    stamp = "2026-08-09T08:00:00.000Z"
+    # A가 이 시각에 두 행(팩트마다 한 행)을 갖는다 — 실제 내보내기의 정상 형태다.
+    dup_lines = [
+        _row("A", LAT, stamp, predicate="none"),
+        _row("A", LAT, stamp, predicate="Follow-Entity", obj="C"),
+        _row("B", NORTH_2M, stamp),
+        _row("C", LAT, stamp),
+    ]
+    single_lines = [
+        _row("A", LAT, stamp, predicate="Follow-Entity", obj="C"),
+        _row("B", NORTH_2M, stamp),
+        _row("C", LAT, stamp),
+    ]
+    dup_stats, _, _, _ = run(dup_lines)
+    single_stats, _, _, _ = run(single_lines)
+    assert dup_stats.relation_counts == single_stats.relation_counts
+
+
 def test_manifest_counts_include_predicates_that_produced_nothing(run):
     stamp = "2026-08-09T08:00:00.000Z"
     # 둘 다 force="1"이라 in_range_of는 대립 진영 필터에 걸려 0건으로 남는다.
