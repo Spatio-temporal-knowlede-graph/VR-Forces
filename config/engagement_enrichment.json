@@ -1,0 +1,21 @@
+{
+  "enabled": true,
+  "min_new_unique_pairs": 20,
+  "target_new_unique_pairs": 25,
+  "max_new_unique_pairs": 30,
+  "max_slots_per_shooter": 2,
+  "max_slots_per_target": 1,
+  "max_target_task_count": 2,
+  "direct_fire_rounds": 1,
+  "suppress_rapid_duration_s": 5,
+  "suppress_duration_s": 10,
+  "suppress_ammo_limit": 10,
+  "minimum_observation_duration_s": 3,
+  "slot_spacing_s": 15,
+  "movement_speed_mps": 6.0,
+  "direct_fire_duration_s": 5.0,
+  "default_task_duration_s": 2.0,
+  "min_expected_suppress_spo": 70,
+  "max_cover_move_m": 100.0,
+  "min_entity_separation_m": 15.0
+}
