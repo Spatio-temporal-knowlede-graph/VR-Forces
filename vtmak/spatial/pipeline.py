@@ -118,6 +118,7 @@ def process_csv(input_path: Path, relations_path: Path, quality_path: Path,
     log = QualityLog()
     acc = IntervalAccumulator(thresholds.max_merge_gap_s)
     input_rows = frames = 0
+    prev_seconds: float | None = None
 
     with input_path.open(encoding="utf-8-sig", newline="") as stream:
         reader = csv.DictReader(stream)
@@ -126,10 +127,19 @@ def process_csv(input_path: Path, relations_path: Path, quality_path: Path,
         for timestamp, rows in _frames(reader):
             input_rows += len(rows)
             frames += 1
+            seconds = _seconds(timestamp)
+            # _frames는 같은 시각의 재등장만 잡는다. 08:00:05 다음에 08:00:02가
+            # 오는 것처럼 새로운(재등장이 아닌) 시각이 더 이르게 오는 경우는
+            # 여기서 걸러야 한다 — 안 그러면 t_end가 t_start보다 앞선 구간이
+            # 조용히 만들어진다.
+            if prev_seconds is not None and seconds < prev_seconds:
+                raise ValueError(
+                    f"입력이 시각순이 아니다: {timestamp!r}가 앞선 시각보다 이르다")
+            prev_seconds = seconds
             placements, follow = _build(timestamp, rows, index, log)
             observations = judge_frame(timestamp, placements, follow, thresholds,
                                        _span(placements), log)
-            acc.observe(timestamp, _seconds(timestamp),
+            acc.observe(timestamp, seconds,
                         canonicalize(observations, thresholds.symmetric_storage))
 
     intervals = acc.close()

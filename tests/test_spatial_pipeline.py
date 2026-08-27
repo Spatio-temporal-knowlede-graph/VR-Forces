@@ -107,6 +107,13 @@ def test_rejects_a_timestamp_that_reappears_after_another(run):
         run(lines)
 
 
+def test_rejects_a_frame_earlier_than_the_previous_one(run):
+    late, early = "2026-08-09T08:00:05.000Z", "2026-08-09T08:00:02.000Z"
+    lines = [_row("A", LAT, late), _row("A", LAT, early)]
+    with pytest.raises(ValueError, match="시각순이 아니다"):
+        run(lines)
+
+
 def test_unmapped_entity_type_is_reported(run):
     stamp = "2026-08-09T08:00:00.000Z"
     lines = [_row("A", LAT, stamp, dis="9:9:999:9:9:9:9"), _row("B", NORTH_2M, stamp)]

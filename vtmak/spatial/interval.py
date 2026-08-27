@@ -48,7 +48,11 @@ class IntervalAccumulator:
 
         for key, item in current.items():
             state = self._open.get(key)
-            if state is not None and seconds - state.last_seconds <= self._max_gap:
+            # 하한 0을 반드시 같이 검사한다. 상한만 보면 시각이 거꾸로 온
+            # 표본(음수 delta)도 통과해 t_end가 t_start보다 앞서는 구간이
+            # 조용히 만들어진다. process_csv가 입력 순서를 미리 걸러 내지만,
+            # 이 클래스 자체도 시간 역행 앞에서 안전해야 한다.
+            if state is not None and 0.0 <= seconds - state.last_seconds <= self._max_gap:
                 state.t_end = timestamp
                 state.last_seconds = seconds
                 state.support_count += 1

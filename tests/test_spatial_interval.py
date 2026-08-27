@@ -87,6 +87,20 @@ def test_no_interval_spans_a_gap_beyond_the_limit():
     assert [i.support_count for i in out] == [3, 2]
 
 
+def test_a_backwards_timestamp_does_not_merge():
+    # 시계가 거꾸로 간 표본(음수 delta)이 상한 검사만 통과해 병합되면 t_end가
+    # t_start보다 앞선 구간이 생긴다. 병합하지 않고 따로 닫아야 한다.
+    acc = IntervalAccumulator(3.0)
+    acc.observe("t5", 5.0, [NEXT_TO])
+    acc.observe("t2", 2.0, [NEXT_TO])
+    out = acc.close()
+    assert len(out) == 2
+    starts_ends = {(i.t_start, i.t_end) for i in out}
+    assert starts_ends == {("t5", "t5"), ("t2", "t2")}
+    for i in out:
+        assert i.t_start == i.t_end   # 어느 쪽도 뒤바뀐 구간이 아니다
+
+
 def test_intervals_for_one_triple_come_back_in_time_order():
     # 문자열 정렬이면 't10'이 't9'보다 앞선다. 구간 순서는 시각을 따라야 한다.
     acc = IntervalAccumulator(3.0)
