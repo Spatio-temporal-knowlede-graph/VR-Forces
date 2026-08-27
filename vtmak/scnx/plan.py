@@ -323,6 +323,24 @@ def _fill(template: str, ref_kind: str, ref: str, ctx: PlanContext,
     return out, refs
 
 
+_RE_WAIT_SECONDS = re.compile(r"\(seconds-to-wait\s+[-\d.]+\)")
+
+
+def with_wait_seconds(pln: str, seconds: float) -> str:
+    """대기 템플릿의 초를 치환한다. 자리가 없으면 예외다.
+
+    조용히 넘기면 60초 기본값이 남아 뒤의 사격이 시나리오 끝까지 밀린다 —
+    .scnx를 열어보기 전엔 보이지 않는 종류의 실패다.
+    """
+    if seconds <= 0:
+        raise ValueError(f"대기 초가 양수가 아니다: {seconds}")
+    out, count = _RE_WAIT_SECONDS.subn(f"(seconds-to-wait {seconds:.6f})",
+                                       pln, count=1)
+    if count != 1:
+        raise ValueError("wait-duration 템플릿에 seconds-to-wait 자리가 없다")
+    return out
+
+
 def balanced(pln: str) -> bool:
     depth = 0
     for ch in pln:

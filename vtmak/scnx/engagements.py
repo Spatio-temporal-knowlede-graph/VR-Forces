@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -19,6 +20,17 @@ from ..geometry import BattlefieldLayout, Coord, ground_distance
 from ..parser import Event
 from ..ranges import RangeSpec, WeaponRanges
 from ..registry import EntityDef
+from .plan import PlanStep, SPEED_LABEL
+
+# 종료 시각을 계산할 수 없다는 표시. 이 뒤에는 슬롯을 놓지 않는다.
+UNBOUNDED = -1.0
+
+_RE_TASK_TYPE = re.compile(r'\(task-type\s+"([^"]*)"\)')
+_RE_WAIT_VALUE = re.compile(r"\(seconds-to-wait\s+([-\d.]+)\)")
+
+# 끝나는 시각을 아는 task만 여기 있다. 없는 task-type은 전부 UNBOUNDED다 —
+# 모르는 것을 짧게 잡으면 뒤의 교전이 표적이 도착하기도 전에 실행된다.
+_MOVE_TASKS = {"move-to-location-task", "move-to", "move-to-entity"}
 
 
 @dataclass(frozen=True)
@@ -414,3 +426,72 @@ def build_enrichment_slots(
             f"개가 필요하다. 사유별 집계: {tally}")
 
     return SlotBuildResult(slots=tuple(accepted), rejected=tuple(rejected))
+
+
+def estimate_step_duration(step: PlanStep, config: EnrichmentConfig,
+                           move_distance_m: float) -> float:
+    """PlanStep 하나의 예상 소요 시간(초). 모르면 UNBOUNDED.
+
+    설계 §7: 완전한 실행시간 예측이 아니라 도달 가능성을 확보하기 위한
+    정적 스케줄이다. 이동은 설정 속도로 나누고, 고정 지속시간 task는
+    템플릿·설정의 값을 쓴다.
+    """
+    if not step.pln:
+        return 0.0                      # 저작되지 않은 단계는 큐에 없다
+    m = _RE_TASK_TYPE.search(step.pln)
+    task_type = m.group(1) if m else ""
+    if task_type == "wait-duration":
+        v = _RE_WAIT_VALUE.search(step.pln)
+        return float(v.group(1)) if v else UNBOUNDED
+    if task_type == "provide_suppressive_fire_loc":
+        return float(config.suppress_duration_s)
+    if task_type == "fire-at-target":
+        return config.direct_fire_duration_s
+    if task_type in _MOVE_TASKS:
+        return move_distance_m / config.movement_speed_mps
+    if task_type.startswith("set-") or step.action_label == SPEED_LABEL:
+        return config.default_task_duration_s
+    if task_type in ("aim-at-location", "aim-at-entity"):
+        return config.default_task_duration_s
+    return UNBOUNDED
+
+
+class ActorClock:
+    """한 객체의 큐를 따라 누적되는 정적 시계.
+
+    UNBOUNDED task를 한 번 지나면 그 뒤로는 시각을 말할 수 없다. 멈춘 시계로
+    슬롯을 배치하지 않도록 bounded가 False로 굳는다(설계 §7 마지막 문단).
+    """
+
+    def __init__(self, start_s: float, config: EnrichmentConfig) -> None:
+        self._now = float(start_s)
+        self._cfg = config
+        self._bounded = True
+
+    @property
+    def now_s(self) -> float:
+        return self._now
+
+    @property
+    def bounded(self) -> bool:
+        return self._bounded
+
+    def advance(self, step: PlanStep, move_distance_m: float = 0.0) -> None:
+        if not self._bounded:
+            return
+        d = estimate_step_duration(step, self._cfg, move_distance_m)
+        if d == UNBOUNDED:
+            self._bounded = False
+            return
+        self._now += d
+
+    def wait_needed_for(self, scheduled_time_s: int) -> float | None:
+        """scheduled_time_s에 다음 task를 시작하려면 얼마나 기다려야 하나.
+
+        None은 '스케줄할 수 없다'는 뜻이다. 이미 지난 시각이면 최소 관측
+        시간만큼만 기다린다 — 음수 대기는 만들지 않는다.
+        """
+        if not self._bounded:
+            return None
+        return max(float(self._cfg.minimum_observation_duration_s),
+                   float(scheduled_time_s) - self._now)

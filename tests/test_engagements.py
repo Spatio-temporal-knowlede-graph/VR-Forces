@@ -1,5 +1,6 @@
 import dataclasses
 import json
+import math
 import tempfile
 from collections import Counter
 from pathlib import Path
@@ -11,8 +12,11 @@ from vtmak.parser import Event
 from vtmak.ranges import WeaponRanges
 from vtmak.registry import EntityDef
 from vtmak.scnx.engagements import (EnrichmentConfig, EngagementSlot,
+                                    UNBOUNDED, ActorClock,
                                     build_enrichment_slots, build_source_slots,
+                                    estimate_step_duration,
                                     expected_suppress_spo)
+from vtmak.scnx.plan import PlanStep, with_wait_seconds
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -346,3 +350,68 @@ def test_full_scenario_can_supply_at_least_twenty_new_pairs(full_inputs):
     assert 20 <= len(result.slots) <= 30
     assert len({(s.shooter_id, s.target_id) for s in result.slots}) == \
            len(result.slots)
+
+
+CFG = EnrichmentConfig.defaults()
+
+
+def _step(pln, kind="move"):
+    return PlanStep("E1", 0, "moveTo", kind, None, pln)
+
+
+def test_wait_duration_is_read_from_the_template_value():
+    step = _step('(Task (task-type "wait-duration") (subtask False) '
+                 '(seconds-to-wait 12.500000))', kind="wait")
+    assert estimate_step_duration(step, CFG, 0.0) == 12.5
+
+
+def test_move_duration_is_distance_over_configured_speed():
+    step = _step('(Task (task-type "move-to-location-task") '
+                 '(aiming-point 1 2 3))')
+    assert estimate_step_duration(step, CFG, 60.0) == 10.0     # 60m / 6 m/s
+
+
+def test_fire_and_suppress_use_configured_durations():
+    fire = _step('(Task (task-type "fire-at-target") '
+                 '(max-rounds-to-fire 1))', kind="fire_direct")
+    supp = _step('(Task (task-type "provide_suppressive_fire_loc") '
+                 '(DtRwReal (durationTotal 10.000000) ))', kind="suppress")
+    assert estimate_step_duration(fire, CFG, 0.0) == 5.0
+    assert estimate_step_duration(supp, CFG, 0.0) == 10.0
+
+
+def test_follow_and_unknown_tasks_are_unbounded():
+    follow = _step('(Task (task-type "follow-entity") (offset 0 0 0))',
+                   kind="follow")
+    unknown = _step('(Task (task-type "orbit_object") (radius 300))',
+                    kind="orbit")
+    assert estimate_step_duration(follow, CFG, 0.0) == UNBOUNDED
+    assert estimate_step_duration(unknown, CFG, 0.0) == UNBOUNDED
+
+
+def test_clock_freezes_and_reports_unbounded_after_an_endless_task():
+    clock = ActorClock(0, CFG)
+    clock.advance(_step('(Task (task-type "wait-duration") '
+                        '(seconds-to-wait 4.000000))', kind="wait"), 0.0)
+    assert clock.now_s == 4.0 and clock.bounded
+    clock.advance(_step('(Task (task-type "follow-entity") '
+                        '(offset 0 0 0))', kind="follow"), 0.0)
+    assert not clock.bounded
+    assert clock.wait_needed_for(600) is None      # 스케줄할 수 없다
+
+
+def test_clock_returns_a_bounded_positive_wait_and_never_a_negative_one():
+    clock = ActorClock(0, CFG)
+    clock.advance(_step('(Task (task-type "wait-duration") '
+                        '(seconds-to-wait 4.000000))', kind="wait"), 0.0)
+    assert clock.wait_needed_for(30) == 26.0
+    # 이미 지난 시각을 요구하면 최소 관측 시간만큼만 기다린다(음수 금지).
+    assert clock.wait_needed_for(1) == float(CFG.minimum_observation_duration_s)
+
+
+def test_wait_seconds_are_substituted_into_the_harvested_template():
+    tmpl = ('(Task (task-type "wait-duration") (subtask False) '
+            '(allow-task-visualizations True) (seconds-to-wait 60.000000))')
+    out = with_wait_seconds(tmpl, 26.0)
+    assert "(seconds-to-wait 26.000000)" in out
+    assert "60.000000" not in out
