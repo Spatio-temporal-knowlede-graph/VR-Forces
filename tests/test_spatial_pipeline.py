@@ -120,13 +120,14 @@ def test_never_emits_approach(run):
     assert "approach" not in rel.read_text(encoding="utf-8")
 
 
-def test_entities_with_unknown_force_are_not_treated_as_allies(run):
+def test_blank_force_suppresses_in_range_of_but_still_reports_it(run):
     stamp = "2026-08-09T08:00:00.000Z"
     lines = [_row("A", LAT, stamp, force=""), _row("B", NORTH_2M, stamp, force="")]
     stats, _, qual, _ = run(lines)
-    # 소속이 비면 주체별 고유 sentinel이 붙는다. 빈 문자열을 그대로 두면 둘이 같은 편이
-    # 되어 대립 진영 필터가 이 쌍을 통째로 삼킨다.
-    assert stats.relation_counts["in_range_of"] == 2
+    # force가 비면 필터를 적용할 수 없으므로 in_range_of 자체를 만들지 않는다(§3.3).
+    # 소속을 유추해 필터를 흉내 내면 안 되므로, 빈 문자열끼리를 '같은 편'으로도
+    # '다른 편'으로도 취급하지 않고 그냥 관계를 내지 않는다.
+    assert stats.relation_counts["in_range_of"] == 0
     assert "MISSING_FORCE" in qual.read_text(encoding="utf-8")
 
 

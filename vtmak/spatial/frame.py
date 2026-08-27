@@ -54,7 +54,11 @@ def judge_frame(timestamp: str, placements: list[Placement],
                 out.append(Observation(subject.subject, predicate, obj.subject))
 
     for shooter, target, gap in engagement_pairs(placements, field_span_m):
-        if shooter.force == target.force:
+        # force가 없으면 필터를 적용할 수 없으므로 관계를 만들지 않는다(§3.3·§5.4).
+        # 빈 문자열끼리 같다고 걸러 내면 소속 미상 둘을 "같은 편"으로 대하는
+        # 것이 되고, 다르다고 통과시키면 "다른 편"으로 유추하는 것이 된다 —
+        # 둘 다 금지된 추론이라 force가 빈 쪽은 무조건 건너뛴다.
+        if not shooter.force or not target.force or shooter.force == target.force:
             continue
         evidence = judge_in_range(gap, shooter.profile)
         if evidence is not None:

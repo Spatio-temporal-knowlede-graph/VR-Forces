@@ -81,6 +81,14 @@ class TestInRange:
                                    set(), T, SPAN, QualityLog()))
         assert ("S", "in_range_of", "T") not in got
 
+    def test_blank_force_on_either_side_is_filtered_out(self):
+        # force가 없으면 필터를 적용할 수 없으므로 관계를 만들지 않는다(§3.3).
+        # 빈 문자열끼리를 '같은 편'으로 유추해 걸러 내는 것이 아니다 — 무조건 건너뛴다.
+        got = _triples(judge_frame("t0", [_at("S", force=""), _at("T", east_m=300.0, force="2")],
+                                   set(), T, SPAN, QualityLog()))
+        assert ("S", "in_range_of", "T") not in got
+        assert ("T", "in_range_of", "S") not in got
+
     def test_unarmed_shooter_produces_nothing(self):
         got = _triples(judge_frame("t0", [_at("S", profile=UNARMED, force="1"),
                                           _at("T", east_m=300.0, force="2")],

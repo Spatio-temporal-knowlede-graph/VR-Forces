@@ -90,9 +90,11 @@ def _build(timestamp: str, rows: list[dict[str, str]], index: ProfileIndex,
             coord=Coord(float(row["latitude"]), float(row["longitude"]), 0.0),
             heading_deg=float(heading) if heading else None,
             profile=index.of(row["entity_type"]),
-            # 소속이 비면 어느 쌍과도 같아지면 안 된다. 빈 문자열을 그대로 두면
-            # 소속 미상끼리 '같은 편'이 되어 필터가 삼킨다.
-            force=force or f"?{row['subject']}",
+            # 빈 문자열을 그대로 둔다. force가 없으면 in_range_of 자체를 만들지
+            # 않는다(§3.3) — frame.py가 force 존재 여부로 건너뛴다. sentinel로
+            # 서로 다르게 만들면 소속 미상끼리도 "다른 편"이 되어 관계가
+            # 새로 생겨 버리는데, 이는 소속을 유추하는 것과 다르지 않다.
+            force=force,
         ))
     return placements, follow
 
