@@ -69,3 +69,37 @@ def judge_direction(distance: float, relative_bearing: float | None,
     if offset > thresholds.behind_sector_deg:
         return "behind"
     return None
+
+
+def _reaches(distance: float, spec) -> bool:
+    return spec is not None and spec.min_m <= distance <= spec.max_m
+
+
+def judge_in_range(distance: float, shooter: EntityProfile | None) -> str | None:
+    """사수의 명목 사거리가 이 거리에 닿는가. 닿으면 사격 방식을 돌려준다.
+
+    이것은 in_range_of의 기하 부분이다. 소속 필터는 방출 정책이라 frame.py에
+    있다 — 나중에 아군 지원사격·오인사격 분석으로 넓힐 때 여기를 안 고치도록.
+
+    최소사거리를 지킨다. Javelin은 65m 안쪽을 못 쏘고 간접사격은 포에 따라
+    1,200~2,000m 안쪽에 못 떨어뜨린다. 이 전장에서는 포병 최대사거리가 지도보다
+    크므로 판별력을 갖는 것은 최소사거리뿐이다.
+
+    둘 다 성립해도 관계는 하나이고 evidence가 'direct|indirect'다. 지금 표에는
+    둘 다 가진 클래스가 없지만, 규칙이 없으면 그런 클래스가 생겼을 때 한 쌍에
+    트리플이 둘 생긴다.
+
+    실제 사격 가능 여부가 아니다. 탑재 무장·탄약·가시선·센서·교전규칙은 보지
+    않는다.
+    """
+    if shooter is None:
+        return None
+    direct = _reaches(distance, shooter.direct)
+    indirect = _reaches(distance, shooter.indirect)
+    if direct and indirect:
+        return "direct|indirect"
+    if direct:
+        return "direct"
+    if indirect:
+        return "indirect"
+    return None
