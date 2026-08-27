@@ -9,6 +9,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 from .models import Observation, RelationInterval
+from .thresholds import SYMMETRIC_PREDICATES
 
 _Key = tuple[str, str, str]
 
@@ -69,3 +70,38 @@ class IntervalAccumulator:
             t_start=state.t_start, t_end=state.t_end,
             support_count=state.support_count, evidence=state.evidence,
         ))
+
+
+def canonicalize(observations: Iterable[Observation],
+                 storage: str) -> list[Observation]:
+    """한 시각의 관측에 대칭 저장 정책을 적용한다.
+
+    next_to와 approach는 대칭이라 양방향이 같은 정보를 담는다. canonical은
+    쌍마다 트리플 하나만 남기고 작은 식별자를 주어로 삼아 그 둘을 절반으로
+    줄인다. both는 양쪽을 다 써서, 평범한 directed triple만 가정하는 소비자가
+    대칭성을 몰라도 되게 한다.
+
+    판정은 두 방식에서 같고 방출만 갈린다 — 그래서 바꾸는 비용이 설정 한 줄이다.
+    """
+    if storage not in {"canonical", "both"}:
+        raise ValueError(f"모르는 symmetric_storage: {storage!r}")
+
+    seen: set[tuple[str, str, str]] = set()
+    out: list[Observation] = []
+
+    def _add(item: Observation) -> None:
+        key = (item.subject, item.predicate, item.object)
+        if key in seen:
+            return
+        seen.add(key)
+        out.append(item)
+
+    for item in observations:
+        if item.predicate not in SYMMETRIC_PREDICATES:
+            _add(item)
+            continue
+        low, high = sorted((item.subject, item.object))
+        _add(Observation(low, item.predicate, high, item.evidence))
+        if storage == "both":
+            _add(Observation(high, item.predicate, low, item.evidence))
+    return out
