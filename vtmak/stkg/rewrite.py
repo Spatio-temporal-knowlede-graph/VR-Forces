@@ -68,6 +68,10 @@ PRED_COVER = "find_cover"
 PRED_FIRING_POS = "find_firing_position"
 PRED_FIRED_BY = "fired_by"
 PRED_NONE = "none"
+# §9.1: FFE-on-Location과 둘 다 위치 사격이지만 간접 화력타격과 직접
+# 제압사격은 실행 의미가 달라 별개 술어로 둔다. 질의 계층에서만
+# Fires-At-Location의 하위로 묶일 수 있다 — GT에는 합쳐 넣지 않는다.
+PRED_SUPPRESSIVE_FIRE = "Provide-Suppressive-Fire-Loc"
 
 # predicate.parse의 정규화 이름 → 이 단계가 쓰는 정규형.
 _NAME = {
@@ -78,6 +82,7 @@ _NAME = {
     "waits": PRED_WAIT,
     "takes_cover_from": PRED_COVER,
     "takes_firing_position_against": PRED_FIRING_POS,
+    "provides_suppressive_fire_at": PRED_SUPPRESSIVE_FIRE,
 }
 
 # object 열이 비었음을 뜻하는 값. 원문은 대개 '-'다.

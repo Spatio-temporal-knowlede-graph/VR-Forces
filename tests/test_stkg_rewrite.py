@@ -72,6 +72,35 @@ def test_ffe_becomes_ffe_on_location_with_the_target_place(layout):
     assert out[0]["object"] == lid
 
 
+def test_rewrite_names_suppressive_fire_without_suppresses(layout):
+    """§9.2: GT는 시뮬레이터가 직접 보고한 위치 태스크만 담는다 — 옛 이름
+    `suppresses`가 암시하던 객체 효과는 관측된 적이 없다."""
+    raw = ("provide_suppressive_fire_loc: "
+           "targetLocation={1.0, 2.0, 3.0}")
+    rows = [_row("FRINF001", raw, _at(layout, "LOC_중앙킬존"))]
+    out, _, _, tally = rewrite(rows, layout)
+    assert out[0]["predicate"] == "Provide-Suppressive-Fire-Loc"
+    assert out[0]["object"]
+    assert "suppresses" not in tally.predicates
+
+
+def test_indirect_ffe_stays_a_separate_predicate(layout):
+    # 설계 §9.1: FFE-on-Location과 제압사격은 둘 다 위치 사격이지만 간접
+    # 화력타격과 직접 제압사격이라 실행 의미가 다르다. 합치지 않는다.
+    ffe_lid = "LOC_적포병진지"
+    ffe_raw = (f'FFE-On-Location "Location={_ecef_blob(layout, ffe_lid)}"  '
+               f"Name of Weapons to Fire: Indirect-Fire-Gun:m9333he. "
+               f"Number-Of-Rounds: 1")
+    supp_raw = ("provide_suppressive_fire_loc: "
+                "targetLocation={1.0, 2.0, 3.0}")
+    rows = [_row("FRMORT001", ffe_raw, _at(layout, "LOC_아군박격포진지")),
+            _row("FRINF001", supp_raw, _at(layout, "LOC_중앙킬존"))]
+    out, _, _, _ = rewrite(rows, layout)
+    assert {r["predicate"] for r in out} == {"FFE-on-Location",
+                                             "Provide-Suppressive-Fire-Loc"}
+    assert "Fires-At-Location" not in {r["predicate"] for r in out}
+
+
 def test_find_cover_keeps_the_threat_as_object(layout):
     raw = ("find_cover: ChooseFiringPosition=False; DistanceFromThreat=2; "
            "Threat=FRINF001; Range=50")

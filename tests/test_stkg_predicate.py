@@ -87,3 +87,15 @@ def test_find_firing_position_yields_the_threat():
            "Threat=P10; ThreatRadius=2;")
     assert parse(raw) == Parsed("takes_firing_position_against", "P10",
                                 "entity")
+
+
+def test_suppressive_fire_is_an_observed_location_task():
+    """§9.2: 제압사격 태스크는 위치 좌표만 준다 — 대상 UUID가 없다. 제압
+    사격을 했다고 해서 특정 객체가 제압됐다는 뜻은 아니므로, 시뮬레이터가
+    직접 보고한 이 위치 관측만 담는다. 옛 이름 `suppresses`는 객체 효과를
+    암시해 관측과 어긋났다."""
+    parsed = parse("provide_suppressive_fire_loc: "
+                   "targetLocation={1.0, 2.0, 3.0}")
+    assert parsed.predicate == "provides_suppressive_fire_at"
+    assert parsed.object_raw == "1.0,2.0,3.0"
+    assert parsed.object_kind == "coord"

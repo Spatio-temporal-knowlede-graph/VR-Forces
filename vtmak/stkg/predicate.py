@@ -75,7 +75,11 @@ def parse(raw: str) -> Parsed | None:
 
     m = _RE_SUPPRESS.match(raw)
     if m:
-        return Parsed("suppresses", _coord(m.group(1)), "coord")
+        # §9.2: 위치 태스크다 — 표적 UUID가 없다. 제압사격 수행이 특정
+        # 객체를 제압했다는 뜻은 아니므로 "suppresses"(객체 효과)로 부르지
+        # 않는다. 시뮬레이터가 직접 보고한 것만 담는다.
+        return Parsed("provides_suppressive_fire_at", _coord(m.group(1)),
+                      "coord")
 
     m = _RE_FIND_COVER.match(raw)
     if m:
