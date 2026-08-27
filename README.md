@@ -715,3 +715,60 @@ python -m pytest tests/ -q
 
 297개. `conftest.py`가 `sys.path`를 주입한다(경로에 공백·한글이 있어 설치 방식을
 쓰지 않는다).
+
+## 공간 관계 확장
+
+엔티티 쌍의 정성적 공간 관계 네 개를 파생해 시간 구간으로 낸다.
+
+```powershell
+python scripts/08_spatial_relations.py `
+  "build\stkg\adapted_ver2.0.csv" `
+  --relations "build\stkg\relations_ver2.0.csv" `
+  --quality   "build\stkg\relation_quality_ver2.0.csv" `
+  --manifest  "build\stkg\relations_ver2.0.manifest.json" `
+  --dataset-version "ver2.0"
+```
+
+### 입력 계약
+
+```text
+subject,predicate,object,latitude,longitude,timestamp,heading,entity_type,force
+```
+
+`heading`은 진북 0, 시계 방향 도(度). `timestamp`는 벽시계가 아니라 VR-Forces
+시뮬레이션 시각이어야 한다. `force`는 `entity_type`에서 유추할 수 없다 — DIS
+국가코드는 제작국이고, 시나리오에는 미제 장비를 쓰는 적이 있다.
+
+### 관계
+
+| 관계 | 뜻 | 대칭 |
+|---|---|---|
+| `next_to` | 타입별 이격거리 컷 안의 거리 | 예 |
+| `in_front_of` | 주어가 목적어 방위 ±45° 안, 관심거리 이내 | 아니오 |
+| `behind` | 주어가 목적어 방위에서 135° 밖, 관심거리 이내 | 아니오 |
+| `in_range_of` | 목적어가 주어의 명목 사거리 안, 소속이 다를 때만 | 아니오 |
+
+측면 90° 두 구간은 의도적으로 아무 방향 관계도 갖지 않는다. 좌우는 범위 밖이다.
+
+`in_range_of`는 쏠 수 있다는 뜻이 아니다. 명목 사거리표만 본다 — 탑재 무장,
+탄약, 가시선, 센서 탐지, 교전규칙은 확인하지 않는다.
+
+**`approach`는 설계돼 있지만 구현하지 않았다.** 거리 변화율이 필요한데 그 율은
+내보내기가 시뮬레이션 시각을 줄 때에만 뜻이 있다. 설계 문서 §14를 보라.
+
+### 출력 계약
+
+```text
+subject,predicate,object,t_start,t_end,support_count,evidence,dataset_version,threshold_config_version
+```
+
+시각마다 한 줄이 아니라 구간으로 낸다 — 매초 방출은 원본의 15~63배가 된다.
+`support_count`는 그 구간을 뒷받침한 관측 수라, 근거가 얇은 구간을 걸러낼 수 있다.
+
+대칭 관계는 기본적으로 한 방향만 저장한다(임계값 설정의 `symmetric_storage`).
+매니페스트가 어느 술어가 대칭이고 어떻게 저장했는지 남긴다.
+
+### 거리·방위의 출처
+
+거리는 전부 `vtmak.geometry.ground_distance`, 방위는 `bearing_elevation`이다.
+평면 투영을 따로 두면 `in_range_of`가 G0 사거리 게이트와 경계에서 어긋난다.
