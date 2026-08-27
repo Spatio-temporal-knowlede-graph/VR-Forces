@@ -41,6 +41,15 @@ def _deg_scales(lat_deg: float) -> tuple[float, float]:
             n_rad * math.cos(phi) * math.pi / 180.0)
 
 
+def deg_scales(lat_deg: float) -> tuple[float, float]:
+    """위도 1도·경도 1도의 미터. _deg_scales의 공개 이름이다.
+
+    격자 버킷을 도 단위로 나눌 때 필요하다. 이걸 안 내주면 호출부가 도-미터
+    환산을 다시 짜게 되고, 그 순간 거리 기준이 두 벌이 된다.
+    """
+    return _deg_scales(lat_deg)
+
+
 @dataclass(frozen=True)
 class Coord:
     lat: float
