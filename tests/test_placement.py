@@ -228,7 +228,11 @@ def test_suppressive_fire_aims_where_the_target_is_when_fired(built):
                 continue
             m = pat.search(s.pln)
             assert m, s.event_id
-            e = ev[s.event_id]
+            # 제압사격은 build_engagement_steps가 슬롯 하나로 합성한
+            # 단계라 event_id가 원문 event_id가 아니라 슬롯 id다. 원문
+            # 슬롯의 slot_id는 정확히 "SRC-" + 그 원문 event_id라
+            # (engagements.build_source_slots) 그대로 복원할 수 있다.
+            e = ev[s.slot_id.removeprefix("SRC-")]
             shot_at = Coord.from_ecef(*(float(x) for x in m.groups()))
             now = (hit_at.get((e.actor, e.target))
                    or tracker.location_at(e.target, e.time_s))

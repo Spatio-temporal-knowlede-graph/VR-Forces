@@ -96,10 +96,14 @@ def test_empty_plans_are_only_towed_equipment(spec):
 
 
 def test_no_synthesised_plan_steps(spec):
-    # 플랜 보강을 제거했으므로 원문 이벤트가 아닌 스텝이 있으면 안 된다.
+    # 플랜 보강을 제거했으므로 원문 이벤트가 아닌 스텝이 있으면 안 된다 —
+    # 단, 교전 슬롯 lowering(build_engagement_steps)이 만드는 이동·대기·
+    # 직접사격·제압사격 네 단계는 예외다. 이 넷은 slot_id로 표시되고
+    # event_id는 원문 event_id가 아니라 슬롯 id(SRC-*)를 쓴다(설계 §5) —
+    # 한 슬롯의 네 단계를 event_id 하나로 묶어 봐야 하기 때문이다.
     for steps in spec.entity_plans.values():
         for s in steps:
-            assert s.event_id.startswith("E"), s
+            assert s.event_id.startswith("E") or s.slot_id, s
 
 
 def test_all_pln_blocks_are_balanced(spec):
@@ -140,14 +144,52 @@ def test_infantry_direct_fire_targets_an_entity(spec):
     assert f'"VRF_UUID:{fire[0].refs[0]}"' in fire[0].pln
 
 
-def test_suppressive_fire_replaces_plain_fire_when_target_is_suppressed(spec):
-    """원문의 사격→피격→제압 3문장을 이어붙여 제압사격으로 저작한다."""
-    sup = [s for steps in spec.entity_plans.values() for s in steps
-           if s.pln and "provide_suppressive_fire_loc" in s.pln]
-    assert sup
-    # 좌표 기반 스크립트 태스크 — uuid 참조가 없어야 한다
-    assert all(not s.refs for s in sup)
-    assert all("targetLocation" in s.pln for s in sup)
+def test_every_source_direct_fire_is_followed_by_suppressive_fire(spec):
+    """원문 directFireAt 77건은 대체가 아니라 순서다 — 직접사격 다음에
+    반드시 같은 슬롯의 제압사격이 붙는다(설계 §5)."""
+    pairs = []
+    for oid, steps in spec.entity_plans.items():
+        live = [s for s in steps if s.pln]
+        for i, step in enumerate(live[:-1]):
+            if step.task_kind != "fire_direct":
+                continue
+            nxt = live[i + 1]
+            assert nxt.task_kind == "suppress", (oid, step.event_id)
+            assert nxt.slot_id == step.slot_id
+            pairs.append((step, nxt))
+    assert len([p for p in pairs if p[0].slot_id.startswith("SRC-")]) == 77
+
+
+def test_suppressive_step_uses_bounded_duration_and_ammo(spec):
+    suppress = [s for steps in spec.entity_plans.values() for s in steps
+                if s.task_kind == "suppress" and s.pln]
+    assert suppress
+    for step in suppress:
+        assert "(durationRapid 5.000000)" in step.pln
+        assert "(durationTotal 10.000000)" in step.pln
+        assert "(ammoLimit 10)" in step.pln
+
+
+def test_slot_preparation_steps_come_before_the_direct_fire(spec):
+    # 이동·대기는 사격 앞에만 붙는다. 사격과 제압 사이에 끼면 두 관측이
+    # 다른 교전으로 갈라진다.
+    for oid, steps in spec.entity_plans.items():
+        live = [s for s in steps if s.pln]
+        for slot_id in {s.slot_id for s in live if s.slot_id}:
+            block = [s for s in live if s.slot_id == slot_id]
+            kinds = [s.task_kind for s in block]
+            assert kinds[-2:] == ["fire_direct", "suppress"], (oid, slot_id)
+            assert set(kinds[:-2]) <= {"move", "wait"}, (oid, slot_id)
+
+
+def test_every_wait_task_is_bounded_and_substituted(spec):
+    waits = [s for steps in spec.entity_plans.values() for s in steps
+             if s.pln and 'task-type "wait-duration"' in s.pln]
+    assert waits
+    for step in waits:
+        m = re.search(r"\(seconds-to-wait ([-\d.]+)\)", step.pln)
+        assert m, step.event_id
+        assert 0.0 < float(m.group(1)) <= 3600.0, step.event_id
 
 
 def test_being_hit_produces_a_take_cover_task(spec):
@@ -318,9 +360,14 @@ def test_spec_is_deterministic(spec):
 
 
 def test_stop_and_stay_become_wait_tasks(spec):
-    """'정지한다'·'잔류한다'는 원문이 서술한 행위다. 버리지 않는다."""
+    """'정지한다'·'잔류한다'는 원문이 서술한 행위다. 버리지 않는다.
+
+    교전 슬롯의 대기(slot_id가 있는 wait)는 원문 stopAt/stayAt이 아니라
+    사격 시각을 맞추려고 build_engagement_steps가 합성한 것이다 — 그 계약은
+    test_every_wait_task_is_bounded_and_substituted가 별도로 검증한다.
+    """
     waits = [(oid, s) for oid, steps in spec.entity_plans.items()
-             for s in steps if s.task_kind == "wait"]
+             for s in steps if s.task_kind == "wait" and not s.slot_id]
     assert waits, "wait task가 하나도 없다"
     for _, s in waits:
         assert s.template in ("stopAt", "stayAt"), s.template

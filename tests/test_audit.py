@@ -156,11 +156,18 @@ def test_references_resolve_to_readable_names(built):
     (task_kinds.csv) '누구를/어디로'에 해당하는 게 없다. 동반 행동
     (`기반kind:행동`, 예: `move_slow:속도 지정`)도 예외다 — 참조는 바로 앞뒤의
     본 태스크 줄이 이미 보여준다.
+
+    suppress도 예외다 — build_engagement_steps(Task 4)가 만드는 제압사격은
+    합성 슬롯 단계라 event_id가 원문 이벤트가 아니라 slot_id다(SRC-*).
+    `_event_ref`는 `events`의 실제 event_id로만 찾으므로 이 단계에서는
+    ref_id를 못 되살린다. 슬롯 자체의 참조(shooter/target/target_ref)는
+    build/engagements/audit.csv(Task 6의 slot_audit_rows)가 별도로 남긴다.
     """
     spec, contents, events, kinds = built
     tasks, _, _ = build_rows(spec, contents, kinds, events)
     live = [t for t in tasks
-            if t.in_scnx and t.task_kind != "wait" and ":" not in t.task_kind]
+            if t.in_scnx and t.task_kind not in ("wait", "suppress")
+            and ":" not in t.task_kind]
     assert live and all(t.ref_id for t in live)
     moves = [t for t in live if t.task_kind == "move"]
     assert moves and all(t.ref_id.startswith("LOC_") for t in moves)

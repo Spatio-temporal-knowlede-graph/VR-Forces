@@ -20,13 +20,20 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
-from ..geometry import Coord, bearing_elevation
+from ..geometry import Coord, bearing_elevation, ground_distance
 from ..parser import Event, PatternMap
 from ..ranges import OK, TOO_CLOSE, UNVERIFIED, WeaponRanges
 from ..registry import EntityDef
 from .catalog import TaskCatalog, TaskKinds
+
+if TYPE_CHECKING:
+    # engagements.py가 이미 `from .plan import PlanStep, SPEED_LABEL`을
+    # 쓴다. 여기서 engagements를 런타임에 import하면 순환 import로 두
+    # 모듈이 함께 깨진다. 타입 힌트에만 필요하므로 TYPE_CHECKING 아래에
+    # 두고, `from __future__ import annotations`가 문자열로 미룬다.
+    from .engagements import ActorClock, EngagementSlot, EnrichmentConfig
 
 # (task_kind, ref_kind) → 행동 후보, 참조 필드, 사거리 종류는 이제
 # config/task_kinds.csv에 있다. 여기에 표를 두면 매핑 하나를 늘릴 때마다
@@ -73,6 +80,11 @@ class PlanStep:
     refs: list[str] = field(default_factory=list)
     issues: list[str] = field(default_factory=list)
     skip_reason: str = ""
+    # 아래 셋은 교전 슬롯 lowering(build_engagement_steps)이 쓴다. 슬롯이
+    # 아닌 단계는 전부 기본값(빈 문자열)으로 남는다.
+    slot_id: str = ""
+    planned_intent: str = ""
+    intent_object: str = ""
 
 
 def build_entity_plan(events: list[Event], entity: EntityDef,
@@ -80,26 +92,39 @@ def build_entity_plan(events: list[Event], entity: EntityDef,
                       kinds: TaskKinds,
                       ranges: WeaponRanges, ctx: PlanContext,
                       fire_distance: dict[str, float],
-                      suppression: set[str] | None = None) -> list[PlanStep]:
+                      slots_by_event: dict[str, EngagementSlot],
+                      clock: ActorClock,
+                      config: EnrichmentConfig) -> list[PlanStep]:
     """fire_distance는 gates.engagement_pairs가 계산한 {event_id: 거리 m}.
 
     사거리 거리를 여기서 다시 계산하지 않는다. 교전 시점의 위치를 푸는
     로직(피격 문장 우선, 이동 추적)이 두 벌 있으면 반드시 어긋난다.
 
-    suppression은 '표적이 제압 상태가 된' 직접사격 event_id 집합. 그런 사격은
-    fire-at-target 대신 provide_suppressive_fire_loc으로 저작한다.
+    slots_by_event는 {원문 event_id: EngagementSlot}. directFireAt
+    이벤트에 슬롯이 있으면 fire-at-target/provide_suppressive_fire_loc을
+    양자택일로 대체하던 옛 로직 대신 build_engagement_steps가 이동·대기·
+    직접사격·제압사격 네 단계를 붙여서 낸다(설계 §5). clock은 이 객체의
+    큐를 따라 누적되는 ActorClock이다 — 슬롯이 아닌 단계도 진행 시각을
+    반영해야 뒤에 오는 슬롯의 대기가 정확해지므로, 여기서 단계마다
+    clock.advance를 부른다.
     """
-    suppression = suppression or set()
     steps: list[PlanStep] = []
     ordered = sorted(events, key=lambda x: (x.time_s, x.event_id))
     for e in ordered:
+        slot = slots_by_event.get(e.event_id)
+        if slot is not None:
+            new_steps = build_engagement_steps(slot, entity, catalog, kinds,
+                                               ranges, ctx, clock, config)
+            steps.extend(new_steps)
+            continue
         kind = pattern_map.task_kind_of(e)
         if kind in ("", "noop"):
             continue
-        if kind == "fire_direct" and e.event_id in suppression:
-            kind = "suppress"
-        steps.extend(_one(e, entity, kind, catalog, kinds, ranges, ctx,
-                          fire_distance, ordered))
+        new_steps = _one(e, entity, kind, catalog, kinds, ranges, ctx,
+                         fire_distance, ordered)
+        for s in new_steps:
+            clock.advance(s)
+        steps.extend(new_steps)
     return steps
 
 
@@ -338,6 +363,111 @@ def with_wait_seconds(pln: str, seconds: float) -> str:
                                        pln, count=1)
     if count != 1:
         raise ValueError("wait-duration 템플릿에 seconds-to-wait 자리가 없다")
+    return out
+
+
+_SUPPRESSION_FIELDS = (
+    (re.compile(r"\(ammoLimit\s+\d+\)"), "(ammoLimit {ammo})"),
+    (re.compile(r"\(durationRapid\s+[-\d.]+\)"),
+     "(durationRapid {rapid:.6f})"),
+    (re.compile(r"\(durationTotal\s+[-\d.]+\)"),
+     "(durationTotal {total:.6f})"),
+)
+
+
+def with_suppression_limits(pln: str, slot: EngagementSlot) -> str:
+    """제압사격의 지속시간·탄약을 슬롯 값으로 낮춘다.
+
+    수확된 기본값은 60초·100발이다. 그대로 두면 한 객체가 1분을 쏘는 동안
+    큐가 정체되고 표적이 과잉 피해를 입어 뒤의 교전이 사라진다(설계 §5).
+    """
+    out = pln
+    for pattern, shape in _SUPPRESSION_FIELDS:
+        value = shape.format(ammo=slot.suppress_ammo_limit,
+                             rapid=float(slot.suppress_rapid_duration_s),
+                             total=float(slot.suppress_duration_s))
+        out, count = pattern.subn(value, out, count=1)
+        if count != 1:
+            raise ValueError(f"제압사격 템플릿 필드 없음: {pattern.pattern}")
+    return out
+
+
+def build_engagement_steps(slot: EngagementSlot, entity: EntityDef,
+                           catalog: TaskCatalog, kinds: TaskKinds,
+                           ranges: WeaponRanges, ctx: PlanContext,
+                           clock: ActorClock,
+                           config: EnrichmentConfig) -> list[PlanStep]:
+    """교전 슬롯 하나 → 이동·대기·직접사격·제압사격 최대 네 단계(설계 §5).
+
+    직접사격과 제압사격은 반드시 붙어 있어야 한다 — 그 사이에 다른 task가
+    끼면 두 관측이 서로 다른 교전으로 갈라져 슬롯을 둔 의미가 사라진다.
+    이동·대기는 사격 앞에만 놓는다.
+
+    합성 Event는 여기서만 산다 — build/events/battle.jsonl에는 쓰지 않는다
+    (설계 §3 제외 항목). 네 단계 모두 같은 슬롯이므로 event_id를
+    slot.slot_id로 통일한다: fire_distance 조회(_one이 e.event_id로 찾는다)
+    와 감사 도구가 한 슬롯의 네 단계를 하나로 묶어 볼 수 있어야 한다.
+    """
+    fire_distance = {slot.slot_id: slot.distance_m}
+    out: list[PlanStep] = []
+
+    if slot.firing_ref:
+        move_event = Event(slot.slot_id, slot.scheduled_time_s, 0, "",
+                           "moveTo", actor=slot.shooter_id,
+                           dst=slot.firing_ref)
+        move_steps = _one(move_event, entity, "move", catalog, kinds, ranges,
+                          ctx, fire_distance, [])
+        move_distance_m = ground_distance(slot.shooter_coord,
+                                          slot.firing_coord)
+        for step in move_steps:
+            step.slot_id = slot.slot_id
+            step.planned_intent = "takes_firing_position_against"
+            step.intent_object = slot.target_id
+            clock.advance(step, move_distance_m)
+        out.extend(move_steps)
+
+    wait_s = clock.wait_needed_for(slot.scheduled_time_s)
+    if wait_s is not None and wait_s > config.minimum_observation_duration_s:
+        wait_event = Event(slot.slot_id, slot.scheduled_time_s, 0, "",
+                           "engagementSlot", actor=slot.shooter_id)
+        wait_steps = _one(wait_event, entity, "wait", catalog, kinds, ranges,
+                          ctx, fire_distance, [])
+        for step in wait_steps:
+            step.slot_id = slot.slot_id
+            if step.pln:
+                step.pln = with_wait_seconds(step.pln, wait_s)
+            clock.advance(step)
+        out.extend(wait_steps)
+
+    fire_event = Event(slot.slot_id, slot.scheduled_time_s, 0, "",
+                       "directFireAt", actor=slot.shooter_id,
+                       target=slot.target_id, src=slot.firing_ref or "")
+    fire_steps = _one(fire_event, entity, "fire_direct", catalog, kinds,
+                      ranges, ctx, fire_distance, [])
+    for step in fire_steps:
+        step.slot_id = slot.slot_id
+        clock.advance(step)
+    out.extend(fire_steps)
+
+    suppress_event = Event(slot.slot_id, slot.scheduled_time_s, 0, "",
+                           "directFireAt", actor=slot.shooter_id,
+                           target=slot.target_ref, src=slot.firing_ref or "")
+    suppress_steps = _one(suppress_event, entity, "suppress", catalog, kinds,
+                          ranges, ctx, fire_distance, [])
+    for step in suppress_steps:
+        step.slot_id = slot.slot_id
+        if step.pln:
+            step.pln = with_suppression_limits(step.pln, slot)
+        clock.advance(step)
+    out.extend(suppress_steps)
+
+    live_kinds = [s.task_kind for s in out if s.pln]
+    if live_kinds[-2:] != ["fire_direct", "suppress"]:
+        raise ValueError(
+            f"교전 슬롯 {slot.slot_id}의 마지막 두 저작 단계가 "
+            f"[fire_direct, suppress]로 끝나지 않는다: {live_kinds} — "
+            "직접사격·제압사격 사이(또는 뒤)에 다른 task가 끼면 두 관측이 "
+            "서로 다른 교전으로 갈라진다")
     return out
 
 

@@ -16,6 +16,8 @@ from ..ranges import WeaponRanges
 from ..registry import EntityDef
 from ..roster import unit_of
 from .catalog import DisCatalog, TaskCatalog, TaskKinds
+from .engagements import (ActorClock, EngagementSlot, EnrichmentConfig,
+                          build_source_slots)
 from .fixed import FixedObject
 from .ids import IdAllocator
 from .placement import PlacementRules, build_headings, build_positions
@@ -274,16 +276,29 @@ def build_spec(events: list[Event], registry: dict[str, EntityDef],
     # 반드시 어긋난다).
     fire_distance = {g.event_id: g.distance_m
                      for g in engagement_pairs(events, registry, layout)}
-    suppression = suppression_events(events)
+
+    # Task 4: 원문 directFireAt 77건을 결정적 EngagementSlot으로 바꿔
+    # 이동·대기·직접사격·제압사격 네 단계로 내린다(설계 §5). suppression_events
+    # 기반의 양자택일 대체는 더 이상 쓰지 않는다 — 그 함수는 Task 6이
+    # 정리할 다른 계약(spec.py 자체 정리)을 위해 남겨 둔다.
+    enrichment_config = EnrichmentConfig.load(
+        CONFIG / "engagement_enrichment.json")
+    source_slots = build_source_slots(events, registry, layout,
+                                      enrichment_config)
+    slots_by_event: dict[str, EngagementSlot] = {}
+    for slot in source_slots:
+        for eid in slot.source_event_ids:
+            slots_by_event[eid] = slot
 
     by_actor: dict[str, list[Event]] = {oid: [] for oid in taskable}
     for e in events:
         if e.actor in by_actor:
             by_actor[e.actor].append(e)
     for oid, d in taskable.items():
+        clock = ActorClock(0, enrichment_config)
         spec.entity_plans[oid] = build_entity_plan(
             by_actor[oid], d, pattern_map, catalog, kinds, ranges, ctx,
-            fire_distance, suppression)
+            fire_distance, slots_by_event, clock, enrichment_config)
 
     # 통제점(= VR-Forces 전술 그래픽)은 태스크가 실제로 참조할 때만 만든다.
     # 예전에는 배치 지명까지 전부 찍었는데, 그건 지도 표시용일 뿐 태스크가
