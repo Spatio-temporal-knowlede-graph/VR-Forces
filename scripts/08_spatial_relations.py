@@ -42,7 +42,8 @@ def main(argv: list[str] | None = None) -> int:
             args.input, args.relations, args.quality, args.manifest,
             config_dir=args.config_dir,
             thresholds=Thresholds.load(args.thresholds),
-            dataset_version=args.dataset_version)
+            dataset_version=args.dataset_version,
+            thresholds_path=args.thresholds)
     except (OSError, ValueError, csv.Error, json.JSONDecodeError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2

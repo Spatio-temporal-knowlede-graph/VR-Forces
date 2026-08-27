@@ -91,6 +91,31 @@ def test_manifest_records_versions_counts_and_storage(run):
     assert "approach" not in payload["counts"]
 
 
+def test_manifest_has_a_threshold_config_sha256_even_without_an_override(run):
+    stamp = "2026-08-09T08:00:00.000Z"
+    _, _, _, man = run([_row("A", LAT, stamp), _row("B", NORTH_2M, stamp)])
+    payload = json.loads(man.read_text(encoding="utf-8"))
+    assert len(payload["threshold_config_sha256"]) == 64  # 기본값만 써도 해시는 있다
+
+
+def test_threshold_config_sha256_hashes_the_override_file_when_given(tmp_path):
+    stamp = "2026-08-09T08:00:00.000Z"
+    source = tmp_path / "in.csv"
+    source.write_text("\n".join([HEADER, _row("A", LAT, stamp),
+                                 _row("B", NORTH_2M, stamp)]) + "\n", encoding="utf-8")
+    override = tmp_path / "t.json"
+    override.write_text(json.dumps({"interest_distance_m": 200.0}), encoding="utf-8")
+    man = tmp_path / "manifest.json"
+    process_csv(source, tmp_path / "r.csv", tmp_path / "q.csv", man,
+               config_dir=CONFIG, thresholds=Thresholds.load(override),
+               dataset_version="v", thresholds_path=override)
+    payload = json.loads(man.read_text(encoding="utf-8"))
+
+    import hashlib
+    expected = hashlib.sha256(override.read_bytes()).hexdigest()
+    assert payload["threshold_config_sha256"] == expected
+
+
 def test_rejects_a_schema_mismatch(tmp_path):
     source = tmp_path / "bad.csv"
     source.write_text("subject,predicate,object\nA,none,\n", encoding="utf-8")
