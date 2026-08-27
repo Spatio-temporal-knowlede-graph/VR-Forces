@@ -844,6 +844,12 @@ def test_firing_prep_becomes_a_coordinate_move(spec):
     일부)는 move-to-location-task 자체도 컨트롤러가 없어(entity_class_map.csv)
     skip_reason=unsupported_task로 저작되지 않을 수 있다 — 그래서 저작된
     것만 골라 pln 내용을 검사한다.
+
+    저작률은 21건 중 7건(unsupported_task 9 + no_verified_position 5 =
+    스킵 14)이다 — 엄폐 52/77(옛 판)·74/77(Fix 1 뒤)이 곳곳에서 인용되는
+    것과 달리 이 수치는 어디에도 안 남아 있었다. 여기 남긴다(Fix 3,
+    2026-08-27 리뷰 라운드 2). choose_firing_location 자체의 단위 테스트는
+    tests/test_engagements.py의 `test_firing_point_*` 여섯 개를 본다.
     """
     preps = [s for steps in spec.entity_plans.values() for s in steps
              if s.task_kind == "move_firing_position"]

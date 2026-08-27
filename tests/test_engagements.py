@@ -9,12 +9,13 @@ import pytest
 
 from vtmak.geometry import BattlefieldLayout, Coord, ground_distance
 from vtmak.parser import Event
-from vtmak.ranges import WeaponRanges
+from vtmak.ranges import RangeSpec, WeaponRanges
 from vtmak.registry import EntityDef
 from vtmak.scnx.engagements import (EnrichmentConfig, EngagementSlot,
                                     UNBOUNDED, ActorClock,
                                     build_enrichment_slots, build_source_slots,
                                     choose_cover_location,
+                                    choose_firing_location,
                                     estimate_step_duration,
                                     expected_suppress_spo)
 from vtmak.scnx.plan import PlanStep, with_wait_seconds
@@ -170,6 +171,85 @@ def test_cover_point_still_leaves_the_actor_free_when_no_one_shares_it():
     ref, coord = choose_cover_location(layout, _actor(), _threat(), cfg)
     assert ref == layout.location_ids()[0]
     assert coord == layout.coord(ref)
+
+
+# ---------------------------------------------------------------------------
+# choose_firing_location 픽스처 — find_firing_position(21/21 실패) 대체.
+# 표적을 사거리 안에 두면서 사수에게 가장 가까운 golden 지형점을 고른다
+# (find_firing_position 대체는 §13 검증 계약에 있었지만 여태 단위 테스트가
+# 없었다 — 실제 참조는 스텁뿐이었다). 표적은 원점에 고정하고, 사수는 표적
+# 남쪽 1,000m에 둬 여러 golden 후보 사이의 '사수와 가장 가깝다' 판정이
+# 실제로 갈리게 한다.
+#
+
+def _firing_target() -> Coord:
+    return Coord(21.0, 105.0, 0.0)
+
+
+def _firing_shooter() -> Coord:
+    return Coord(21.0 - 1000.0 / 110_574.0, 105.0, 0.0)
+
+
+def _firing_range() -> RangeSpec:
+    return RangeSpec(min_m=100.0, max_m=500.0)
+
+
+def _firing_pt(north_m, east_m=0.0, src="golden"):
+    return {"lat": 21.0 + north_m / 110_574.0,
+            "lon": 105.0 + east_m / 103_900.0, "src": src}
+
+
+def test_firing_point_within_range_is_accepted():
+    layout = BattlefieldLayout({"locations": {"LOC_A": _firing_pt(300.0)}})
+    ref, coord = choose_firing_location(layout, _firing_shooter(),
+                                        _firing_target(), _firing_range(),
+                                        reserved=set())
+    assert ref == "LOC_A"
+    assert coord == layout.coord("LOC_A")
+
+
+def test_firing_point_below_minimum_range_is_rejected():
+    layout = BattlefieldLayout({"locations": {"LOC_A": _firing_pt(50.0)}})
+    assert choose_firing_location(layout, _firing_shooter(), _firing_target(),
+                                  _firing_range(), reserved=set()) is None
+
+
+def test_firing_point_beyond_maximum_range_is_rejected():
+    layout = BattlefieldLayout({"locations": {"LOC_A": _firing_pt(600.0)}})
+    assert choose_firing_location(layout, _firing_shooter(), _firing_target(),
+                                  _firing_range(), reserved=set()) is None
+
+
+def test_firing_point_excludes_reserved_refs():
+    """예약된(다른 슬롯이 이미 쓰기로 한) 지점은 사거리 안이어도 거른다 —
+    두 슬롯이 같은 사격 위치로 몰리지 않게 한다."""
+    layout = BattlefieldLayout({"locations": {
+        "LOC_A": _firing_pt(300.0), "LOC_B": _firing_pt(320.0)}})
+    ref, _ = choose_firing_location(layout, _firing_shooter(),
+                                    _firing_target(), _firing_range(),
+                                    reserved={"LOC_A"})
+    assert ref == "LOC_B"
+
+
+def test_firing_point_requires_golden_source():
+    """derived·relocated 점은 지형이 확인되지 않아 이동 task가 도착하지
+    못할 수 있다 — golden이 아니면 사거리 안이어도 후보에서 뺀다."""
+    layout = BattlefieldLayout({"locations": {
+        "LOC_A": _firing_pt(300.0, src="derived")}})
+    assert choose_firing_location(layout, _firing_shooter(), _firing_target(),
+                                  _firing_range(), reserved=set()) is None
+
+
+def test_firing_point_breaks_ties_by_ref_name_when_equidistant_from_the_shooter():
+    """사수와의 거리가 같으면 결정성을 위해 ref 이름으로 갈린다
+    (min((distance, ref)) 동률 해소). 같은 좌표에 이름만 다른 두 golden
+    점을 둬 거리를 정확히 같게 만든다."""
+    layout = BattlefieldLayout({"locations": {
+        "LOC_B": _firing_pt(300.0), "LOC_A": _firing_pt(300.0)}})
+    ref, _ = choose_firing_location(layout, _firing_shooter(),
+                                    _firing_target(), _firing_range(),
+                                    reserved=set())
+    assert ref == "LOC_A"
 
 
 # ---------------------------------------------------------------------------
