@@ -125,21 +125,24 @@ def test_cover_point_must_increase_threat_distance_and_stay_in_bounds():
 
 
 def test_cover_point_at_exactly_the_move_limit_is_accepted():
-    cfg = EnrichmentConfig.defaults()          # max_cover_move_m = 100.0
+    cfg = EnrichmentConfig.defaults()
     # _pt는 위도 21도의 실제 WGS84 도-미터 환산이 아니라 구형 지구 근사
     # 상수(110_574.0/103_900.0)를 쓴다 — ground_distance(WGS84 타원체)와
-    # 상수가 어긋나 nominal 100.0m가 실측 약 100.068m로 살짝 넘어간다
-    # (실측 확인). 100.0을 그대로 쓰면 '경계에서 받아들여진다'는 이 테스트의
-    # 의도와 반대로 항상 거부돼 버리므로, 그 드리프트를 감안한 99.9를 쓴다 —
-    # 실측 약 99.968m로 확실히 한도 안이다.
-    layout = _layout_with_point_at(99.9)
+    # 상수가 어긋나 nominal 값이 실측으로는 약 0.068% 더 길게 잡힌다(실측
+    # 확인). cfg.max_cover_move_m을 그대로 쓰면 '경계에서 받아들여진다'는
+    # 이 테스트의 의도와 반대로 항상 거부돼 버리므로, 그 드리프트를 감안해
+    # 한도보다 1m 못 미치는 지점을 쓴다 — 이 값 범위에서 드리프트(약
+    # 0.3m)를 확실히 흡수한다. 하드코드된 100.0이 아니라 설정값에 상대적으로
+    # 키를 잡아, 설정이 바뀌어도(2026-08-27: 100.0→400.0) 경계 자체를
+    # 계속 검증한다 — 굳어버린 옛 숫자를 검증하지 않는다.
+    layout = _layout_with_point_at(cfg.max_cover_move_m - 1.0)
     assert choose_cover_location(layout, _actor(), _threat(), cfg,
                                  occupied=[]) is not None
 
 
 def test_cover_point_just_past_the_move_limit_is_rejected():
     cfg = EnrichmentConfig.defaults()
-    layout = _layout_with_point_at(100.1)
+    layout = _layout_with_point_at(cfg.max_cover_move_m + 1.0)
     assert choose_cover_location(layout, _actor(), _threat(), cfg,
                                  occupied=[]) is None
 

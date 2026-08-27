@@ -54,7 +54,7 @@ class EnrichmentConfig:
     direct_fire_duration_s: float = 5.0
     default_task_duration_s: float = 2.0
     min_expected_suppress_spo: int = 70
-    max_cover_move_m: float = 100.0
+    max_cover_move_m: float = 400.0
     min_entity_separation_m: float = 15.0
 
     @classmethod

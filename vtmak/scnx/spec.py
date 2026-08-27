@@ -173,6 +173,11 @@ class _Ctx:
         self._tracker = PositionTracker(events, registry)
         self._hit_at = engagement_locations(events)
         self.referenced_locs: set[str] = set()
+        # move_cover가 이번 빌드에서 이미 고른 엄폐 좌표들 - choose_firing_location
+        # 의 reserved_firing_refs와 같은 패턴이다(비어서 시작해 고를 때마다
+        # 쌓인다). t=0 배치 좌표를 쓰면 안 되는 이유는 choose_cover_location
+        # 아래 docstring에 있다.
+        self._reserved_cover_coords: list[Coord] = []
         # 부대 선두 — 대형 추종 이동(follow-entity)의 추종 대상.
         self._leader: dict[str, str] = {}
         for oid in sorted(entity_uuids):
@@ -260,10 +265,28 @@ class _Ctx:
 
     def choose_cover_location(self, actor: str, actor_coord: Coord,
                               threat_coord: Coord) -> tuple[str, Coord] | None:
-        """find_cover 대체. occupied는 이동하는 본인을 뺀 나머지 배치 좌표다."""
-        occupied = [c for oid, c in self._coords.items() if oid != actor]
-        return _choose_cover_location(self._layout, actor_coord, threat_coord,
-                                      self._enrichment_config, occupied)
+        """find_cover 대체.
+
+        occupied는 t=0 배치 좌표가 아니라 이번 빌드에서 이미 골라 준
+        엄폐 지점들이다 — choose_firing_location의 reserved_firing_refs와
+        같은 패턴(빈 채로 시작해 고를 때마다 쌓인다)이다. §8이 말하는
+        '다른 객체와 최소 이격'의 실제 의도는 '같은 계산된 지점으로 두 유닛을
+        보내지 않는다'이지 '피격 시점에 t=0 배치도로 거리를 잰다'가 아니다.
+
+        t=0 배치 좌표(build_positions)로 재면 안 되는 이유는 실측으로 확인됐다
+        (2026-08-27). build_positions는 대형을 이름 붙은 지점 주위에 흩어
+        배치하도록 설계돼 있어, golden 지점 21개 중 16개가 t=0에 이미 누군가
+        15m 안에 있다 — 피격 시점(대개 전투가 한참 진행된 뒤)의 배치와는
+        무관한 값이다. 그 좌표로 최소 이격을 검사하면 '이 엄폐 지점이
+        좋은가'가 아니라 '배치가 어디서 시작했나'만 재게 돼, hitBy 77건 중
+        27건이 실제 이격과 무관하게 거부됐다.
+        """
+        loc = _choose_cover_location(self._layout, actor_coord, threat_coord,
+                                     self._enrichment_config,
+                                     self._reserved_cover_coords)
+        if loc is not None:
+            self._reserved_cover_coords.append(loc[1])
+        return loc
 
 
 def build_spec(events: list[Event], registry: dict[str, EntityDef],
