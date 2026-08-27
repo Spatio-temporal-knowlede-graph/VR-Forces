@@ -450,7 +450,6 @@ shooters = sorted(shooter_ids,
 | `target_unarmed` | 표적의 `weapons`가 비었거나 첫 원소가 빈 문자열 |
 | `target_not_taskable` | 표적이 `taskable`이 아니거나 UAV·통제점·발사체다 |
 | `target_task_count_too_high` | `task_counts.get(target, 0) > config.max_target_task_count` |
-| `target_cap_reached` | 그 표적이 이미 `config.max_slots_per_target`개 |
 | `shooter_cap_reached` | 그 사수가 이미 `config.max_slots_per_shooter`개 |
 | `duplicate_pair` | `(shooter, target)`이 이미 채택됨 |
 | `duplicate_suppress_spo` | `(shooter, target_ref)`가 이미 채택된 슬롯의 SPO와 같다 |
@@ -461,6 +460,8 @@ shooters = sorted(shooter_ids,
 | `target_already_engaged` | 그 표적을 마지막 원문 task 시각 이후에 치는 source 슬롯이 이미 있다 |
 
 `blocked_shooters`에 든 사수는 후보 순회 전에 한 번씩 `SlotRejection(shooter, "", reason)`으로 기록하고 `shooters`에서 제외한다 — 감사표에서 "왜 이 객체가 안 뽑혔나"를 바로 읽을 수 있어야 한다.
+
+표적 순회는 `for _round in range(config.max_slots_per_target)` 안에서 돈다. 한 라운드는 각 표적을 한 번씩 방문하고 방문마다 슬롯을 최대 하나 받으므로, 표적당 상한은 라운드 수가 그대로 강제한다. 상한이 1인 기본 설정에서는 라운드가 한 번이라 단일 패스와 동일하다. 표적당 상한을 별도 거절 사유로 검사하지 않는다 — 라운드 수가 이미 강제하므로 그 검사는 절대 참이 될 수 없는 죽은 분기가 된다. 같은 라운드가 아닌 다음 라운드에서 같은 `(공격자, 표적)`이 다시 올라오는 것은 `duplicate_pair`가 막는다.
 
 `duplicate_suppress_spo`로 걸린 후보는 사유만 남기고 버린다. 같은 SPO를 만들지 않는 것이 목적이므로 나중에 다시 꺼내도 결과가 같다 — 재시도 큐를 만들지 않는다.
 
