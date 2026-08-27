@@ -1,6 +1,6 @@
-﻿"""?덉쭏 由ы룷?몃뒗 (?쒓컖, 肄붾뱶)濡?臾띕뒗??
+"""품질 로그가 (timestamp, code)로 묶이는 이유.
 
-?몃? 遺뺢눼媛 ?쒓컖??4,945?띿씠?????⑥쐞濡??대㈃ 由ы룷?멸? ?곗텧臾쇰낫??而ㅼ쭊??
+편대 추종이 좌표를 한 점으로 붕괴시키면 한 시각에 약 4,945개의 좌표 충돌 쌍이 나온다(§2.4). 쌍마다 한 줄씩 내면 품질 리포트가 그것이 설명하는 관계 산출물보다 커진다. 그래서 (timestamp, code)로 묶어 한 줄로 낸다.
 """
 from vtmak.spatial.quality import (COORDINATE_COLLISION, MISSING_HEADING,
                                    QualityLog)
@@ -8,7 +8,7 @@ from vtmak.spatial.quality import (COORDINATE_COLLISION, MISSING_HEADING,
 
 def test_records_a_single_issue():
     log = QualityLog()
-    log.record("t0", ["FRINF001"], MISSING_HEADING, "諛⑹쐞 ?놁쓬")
+    log.record("t0", ["FRINF001"], MISSING_HEADING, "방위 없음")
     issues = log.issues()
     assert len(issues) == 1
     assert issues[0].subjects == "FRINF001"
