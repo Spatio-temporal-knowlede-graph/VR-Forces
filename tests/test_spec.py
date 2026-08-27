@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from vtmak.geometry import BattlefieldLayout, Coord
+from vtmak.geometry import BattlefieldLayout, Coord, ground_distance
 from vtmak.paths import SCENARIO
 from vtmak.parser import Event, PatternMap, parse_scenario
 from vtmak.ranges import WeaponRanges
@@ -11,8 +11,9 @@ from vtmak.registry import ClassMap, EntityDef, build_registry
 from vtmak.roster import RosterPlan, filter_events, select_roster
 from vtmak.scnx.catalog import DisCatalog, TaskCatalog, TaskKinds
 from vtmak.scnx.engagements import ActorClock, EnrichmentConfig
+from vtmak.scnx.ids import IdAllocator
 from vtmak.scnx.plan import SKIP_MIN_RANGE, balanced, build_entity_plan
-from vtmak.scnx.spec import build_spec
+from vtmak.scnx.spec import _Ctx, build_spec
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -291,6 +292,45 @@ def test_cover_move_substitutes_the_chosen_point_not_the_threat():
     assert f"{x:.6f} {y:.6f} {z:.6f}" in live[0].pln
     tx, ty, tz = threat_coord.to_ecef()
     assert f"{tx:.6f} {ty:.6f} {tz:.6f}" not in live[0].pln
+
+
+def test_shared_cover_point_spreads_entities_along_the_perpendicular_axis():
+    """이격은 지점 선택 필터가 아니라 배치 규칙이다(2026-08-27, 세 번째 정정).
+
+    같은 golden 지점을 고른 여러 객체는 위협→지점 방위에 수직인 축 위,
+    min_entity_separation_m 간격으로 좌우 번갈아 벌어져야 한다 — 그러면서도
+    엄폐라는 목적(위협에서 멀어짐)은 각자 유지해야 한다. _Ctx는 build_spec
+    호출 하나마다 하나씩 살아 있으므로, 같은 ctx에 여러 번 물어 실제 빌드의
+    누적 배정을 재현한다.
+    """
+    layout = BattlefieldLayout({"locations": {
+        "LOC_COVER": {"lat": 21.0, "lon": 105.0 - 250.0 / 103_900.0,
+                     "src": "golden"}}})
+    threat_coord = Coord(21.0, 105.0, 0.0)
+    actor_coord = Coord(21.0, 105.0 + 104.0 / 103_900.0, 0.0)
+    ctx = _Ctx(layout, IdAllocator("test"), {}, {}, [], WeaponRanges(),
+              EnrichmentConfig.defaults())
+    current = ground_distance(actor_coord, threat_coord)
+    min_sep = EnrichmentConfig.defaults().min_entity_separation_m
+
+    ref_a, coord_a = ctx.choose_cover_location("A", actor_coord, threat_coord)
+    ref_b, coord_b = ctx.choose_cover_location("B", actor_coord, threat_coord)
+    ref_c, coord_c = ctx.choose_cover_location("C", actor_coord, threat_coord)
+
+    assert ref_a == ref_b == ref_c == "LOC_COVER"
+    assert coord_a == layout.coord("LOC_COVER"), "k=0은 지점 그 자체다"
+    assert coord_a != coord_b != coord_c
+
+    # k=1, k=2는 min_entity_separation_m만큼, 서로 반대쪽으로.
+    assert ground_distance(coord_a, coord_b) == pytest.approx(min_sep, rel=1e-3)
+    assert ground_distance(coord_a, coord_c) == pytest.approx(min_sep, rel=1e-3)
+    assert ground_distance(coord_b, coord_c) == pytest.approx(2 * min_sep,
+                                                              rel=1e-3)
+
+    # 벌어진 뒤에도 셋 다 이 객체의 시작점보다 위협에서 더 멀어야 한다 —
+    # 엄폐라는 목적 자체가 배치 규칙 때문에 무너지면 안 된다.
+    for coord in (coord_a, coord_b, coord_c):
+        assert ground_distance(coord, threat_coord) > current
 
 
 def test_assault_formation_move_lowers_to_a_plain_move(spec):

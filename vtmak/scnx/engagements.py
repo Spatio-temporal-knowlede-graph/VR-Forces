@@ -55,6 +55,9 @@ class EnrichmentConfig:
     default_task_duration_s: float = 2.0
     min_expected_suppress_spo: int = 70
     max_cover_move_m: float = 400.0
+    # 지점 선택 필터가 아니다(2026-08-27 세 번째 정정) — 같은 golden 지점을
+    # 고른 여러 객체를 위협 방위에 수직으로 벌려 세우는 배치 간격이다.
+    # _Ctx.choose_cover_location(spec.py)이 이 값을 쓴다.
     min_entity_separation_m: float = 15.0
 
     @classmethod
@@ -207,18 +210,25 @@ def choose_firing_location(layout: BattlefieldLayout, shooter: Coord,
 
 
 def choose_cover_location(layout: BattlefieldLayout, actor: Coord,
-                          threat: Coord, config: EnrichmentConfig,
-                          occupied: list[Coord]) -> tuple[str, Coord] | None:
+                          threat: Coord, config: EnrichmentConfig
+                          ) -> tuple[str, Coord] | None:
     """위협에서 멀어지는 golden 지형점. 없으면 None.
 
     find_cover가 다수 모델에서 컨트롤러 비활성으로 실패한다는 사실이
     2026-08 vrfSim.log로 실측됐다(설계 §8). 대체는 스크립트 task가 아니라
     컴파일 시점에 이 지점을 계산해 좌표 이동으로 내리는 것이다.
 
-    설계 §8의 세 제약을 모두 건다. 위협에서 멀어질 것, 전장 경계(=레이아웃이
-    아는 지명) 안일 것, 다른 객체와 최소 이격을 지킬 것. 셋 중 하나라도
-    못 지키면 이동 task를 만들지 않고 None을 돌려준다 — 실패하는 find_cover로
-    되돌아가지 않는다.
+    두 제약만 건다. 위협에서 멀어질 것, 전장 경계(=레이아웃이 아는 지명)
+    안일 것. 못 지키면 이동 task를 만들지 않고 None을 돌려준다 — 실패하는
+    find_cover로 되돌아가지 않는다.
+
+    '다른 객체와 최소 이격'(설계 §8)은 여기서 지점을 거르는 필터가 아니다
+    (2026-08-27, 세 번째 정정). golden 지점 21개 대 hitBy 77건 밀도에서
+    필터로 두면 항상 손해만 본다 — t=0 배치 좌표로 재면 50/77, 이번 빌드에서
+    고른 점만 예약해도 같은 위치에 몰린 부대가 첫 사상자에게 유일한 후보를
+    뺏겨 2/77까지 떨어진다(둘 다 실측). 이격은 이제 지점을 공유하는 여러
+    객체를 배치하는 규칙이다 — 호출부(_Ctx.choose_cover_location)가 같은
+    ref를 고른 객체들을 위협→지점 방위에 수직으로 벌려 세운다.
     """
     current = ground_distance(actor, threat)
     choices = []
@@ -229,9 +239,6 @@ def choose_cover_location(layout: BattlefieldLayout, actor: Coord,
         move = ground_distance(actor, coord)
         away = ground_distance(coord, threat)
         if move > config.max_cover_move_m or away <= current:
-            continue
-        if any(ground_distance(coord, o) < config.min_entity_separation_m
-               for o in occupied):
             continue
         choices.append((-away, move, ref, coord))
     if not choices:

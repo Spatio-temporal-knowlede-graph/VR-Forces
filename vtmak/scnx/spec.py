@@ -6,10 +6,11 @@ task 가능 328객체 전원이 실제 이벤트를 갖고 있다(설계 스펙 
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 from ..gates import PositionTracker, engagement_locations, engagement_pairs
-from ..geometry import BattlefieldLayout, Coord
+from ..geometry import BattlefieldLayout, Coord, bearing_elevation
 from ..parser import Event, PatternMap
 from ..paths import CONFIG
 from ..ranges import WeaponRanges
@@ -173,11 +174,11 @@ class _Ctx:
         self._tracker = PositionTracker(events, registry)
         self._hit_at = engagement_locations(events)
         self.referenced_locs: set[str] = set()
-        # move_cover가 이번 빌드에서 이미 고른 엄폐 좌표들 - choose_firing_location
-        # 의 reserved_firing_refs와 같은 패턴이다(비어서 시작해 고를 때마다
-        # 쌓인다). t=0 배치 좌표를 쓰면 안 되는 이유는 choose_cover_location
-        # 아래 docstring에 있다.
-        self._reserved_cover_coords: list[Coord] = []
+        # move_cover가 같은 golden 지점을 고른 객체를 세는 카운터(ref ->
+        # 다음에 배정할 순번 k). 이격은 더 이상 지점 선택 필터가 아니라
+        # 지점을 공유하는 객체들의 배치 규칙이다 — choose_cover_location
+        # 아래 docstring에 두 차례 정정한 근거가 있다.
+        self._cover_assignments: dict[str, int] = {}
         # 부대 선두 — 대형 추종 이동(follow-entity)의 추종 대상.
         self._leader: dict[str, str] = {}
         for oid in sorted(entity_uuids):
@@ -267,26 +268,38 @@ class _Ctx:
                               threat_coord: Coord) -> tuple[str, Coord] | None:
         """find_cover 대체.
 
-        occupied는 t=0 배치 좌표가 아니라 이번 빌드에서 이미 골라 준
-        엄폐 지점들이다 — choose_firing_location의 reserved_firing_refs와
-        같은 패턴(빈 채로 시작해 고를 때마다 쌓인다)이다. §8이 말하는
-        '다른 객체와 최소 이격'의 실제 의도는 '같은 계산된 지점으로 두 유닛을
-        보내지 않는다'이지 '피격 시점에 t=0 배치도로 거리를 잰다'가 아니다.
+        choose_cover_location(engagements.py)은 이제 위협거리·이동예산만
+        본다 — 최소 이격 필터를 지점 선택에서 뺐다(2026-08-27, 세 번째
+        정정). 앞서 두 번 다 필터로 돌렸다: t=0 배치 좌표로 재면 hitBy 77건
+        중 50건만 남고, 이번 빌드에서 고른 점만 예약해도 같은 위치에 몰린
+        부대(이 시나리오의 대규모 사상자 군집)가 첫 사상자에게 유일한 후보를
+        빼앗겨 2/77까지 떨어진다(둘 다 실측). golden 지점 21개 대 hitBy
+        77건 밀도에서는 필터가 이격을 만족시킬 수 없다 — 지울 수만 있다.
 
-        t=0 배치 좌표(build_positions)로 재면 안 되는 이유는 실측으로 확인됐다
-        (2026-08-27). build_positions는 대형을 이름 붙은 지점 주위에 흩어
-        배치하도록 설계돼 있어, golden 지점 21개 중 16개가 t=0에 이미 누군가
-        15m 안에 있다 — 피격 시점(대개 전투가 한참 진행된 뒤)의 배치와는
-        무관한 값이다. 그 좌표로 최소 이격을 검사하면 '이 엄폐 지점이
-        좋은가'가 아니라 '배치가 어디서 시작했나'만 재게 돼, hitBy 77건 중
-        27건이 실제 이격과 무관하게 거부됐다.
+        그래서 이격은 지점 선택이 아니라 지점 공유 배치 규칙이다. 같은 ref를
+        고른 k번째 객체(0부터, 이 build_spec 호출 안에서 sorted(oid) 순으로
+        처리되므로 k는 결정적이다)를 위협→지점 방위(bearing_elevation)에
+        수직인 축 위, min_entity_separation_m 간격으로 좌우 번갈아 세운다
+        (k=0 → 그 지점 자체, k=1 → +15m, k=2 → -15m, k=3 → +30m, ...).
+        수직 축을 쓰는 이유: 위협까지의 거리가 그 축을 따라 거의 불변이라
+        지점을 고른 이유(위협에서 멀어짐)가 벌린 뒤에도 유지된다 — 위협을
+        마주보는 방어선의 모양이지, 위협을 향해 늘어선 종대가 아니다.
         """
         loc = _choose_cover_location(self._layout, actor_coord, threat_coord,
-                                     self._enrichment_config,
-                                     self._reserved_cover_coords)
-        if loc is not None:
-            self._reserved_cover_coords.append(loc[1])
-        return loc
+                                     self._enrichment_config)
+        if loc is None:
+            return None
+        ref, point_coord = loc
+        k = self._cover_assignments.get(ref, 0)
+        self._cover_assignments[ref] = k + 1
+        if k == 0:
+            return ref, point_coord
+        az, _ = bearing_elevation(threat_coord, point_coord)
+        perp = az + (math.pi / 2 if k % 2 else -math.pi / 2)
+        d = self._enrichment_config.min_entity_separation_m * ((k + 1) // 2)
+        east = d * math.sin(perp)
+        north = d * math.cos(perp)
+        return ref, self._layout.offset_coord(ref, east, north)
 
 
 def build_spec(events: list[Event], registry: dict[str, EntityDef],

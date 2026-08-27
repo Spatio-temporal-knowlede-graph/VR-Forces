@@ -117,8 +117,7 @@ def _layout_with_only_points_toward_the_threat():
 def test_cover_point_must_increase_threat_distance_and_stay_in_bounds():
     layout = _layout_with_golden_points()      # 위협 쪽 1개, 반대쪽 2개
     cfg = EnrichmentConfig.defaults()
-    ref, coord = choose_cover_location(layout, _actor(), _threat(), cfg,
-                                       occupied=[])
+    ref, coord = choose_cover_location(layout, _actor(), _threat(), cfg)
     assert ground_distance(coord, _threat()) > ground_distance(_actor(),
                                                                _threat())
     assert layout.source_of(ref) == "golden"
@@ -136,30 +135,42 @@ def test_cover_point_at_exactly_the_move_limit_is_accepted():
     # 키를 잡아, 설정이 바뀌어도(2026-08-27: 100.0→400.0) 경계 자체를
     # 계속 검증한다 — 굳어버린 옛 숫자를 검증하지 않는다.
     layout = _layout_with_point_at(cfg.max_cover_move_m - 1.0)
-    assert choose_cover_location(layout, _actor(), _threat(), cfg,
-                                 occupied=[]) is not None
+    assert choose_cover_location(layout, _actor(), _threat(), cfg) is not None
 
 
 def test_cover_point_just_past_the_move_limit_is_rejected():
     cfg = EnrichmentConfig.defaults()
     layout = _layout_with_point_at(cfg.max_cover_move_m + 1.0)
-    assert choose_cover_location(layout, _actor(), _threat(), cfg,
-                                 occupied=[]) is None
-
-
-def test_cover_point_respects_minimum_entity_separation():
-    cfg = EnrichmentConfig.defaults()          # min_entity_separation_m = 15.0
-    layout = _layout_with_single_valid_point()
-    only = layout.coord(layout.location_ids()[0])
-    assert choose_cover_location(layout, _actor(), _threat(), cfg,
-                                 occupied=[only]) is None
+    assert choose_cover_location(layout, _actor(), _threat(), cfg) is None
 
 
 def test_no_verified_cover_point_returns_none_not_a_find_task():
     layout = _layout_with_only_points_toward_the_threat()
     assert choose_cover_location(layout, _actor(), _threat(),
-                                 EnrichmentConfig.defaults(),
-                                 occupied=[]) is None
+                                 EnrichmentConfig.defaults()) is None
+
+
+# choose_cover_location 자체는 더 이상 최소 이격을 지점 선택 필터로 걸지
+# 않는다(2026-08-27, 세 번째 정정) — golden 지점 21개 대 hitBy 77건
+# 밀도에서 필터로 두면 지울 수만 있지 채울 수 없다는 게 두 번의 실측
+# (t=0 배치 좌표: 50/77, 이번 빌드 예약: 2/77)으로 확인됐다. 이격은 이제
+# 같은 지점을 공유하는 여러 객체의 배치 규칙이고, 그 로직은
+# _Ctx.choose_cover_location(spec.py)에 있다 — 아래
+# test_cover_point_still_leaves_the_actor_free_when_no_one_shares_it과
+# tests/test_spec.py의 배치 검증 테스트를 본다.
+def test_cover_point_still_leaves_the_actor_free_when_no_one_shares_it():
+    """이격이 지점 선택 필터가 아님을 회귀로 잡는다.
+
+    이전 두 버전 중 하나로 되돌아가면(occupied가 다시 필터로 걸리면) 이
+    테스트 자체는 여전히 통과하지만(occupied 인자가 아예 없으므로), 시그니처
+    회귀는 여기서 걸린다 — choose_cover_location이 occupied를 다시 받으면
+    TypeError가 난다.
+    """
+    layout = _layout_with_single_valid_point()
+    cfg = EnrichmentConfig.defaults()
+    ref, coord = choose_cover_location(layout, _actor(), _threat(), cfg)
+    assert ref == layout.location_ids()[0]
+    assert coord == layout.coord(ref)
 
 
 # ---------------------------------------------------------------------------
