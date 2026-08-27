@@ -15,17 +15,42 @@ writer가 블록 순서를 바꾸거나 하나를 빠뜨리면 시뮬레이터�
   항상 그 플랜의 마지막 태스크여야 한다.
 - config/fixed_objects.json이 선언한 고정 객체(UAV·순찰로)는 모두 저작돼야
   한다.
+
+이 파일의 네 테스트는 모두 커밋된 build/scnx/battle.scnx를 읽는다 — 그래서
+누군가 plan.py를 고치고 04를 다시 안 돌리면, 파일은 그대로인데 코드만
+바뀌어도 이 네 테스트는 낡은 zip을 상대로 계속 통과한다(리뷰 라운드 2
+Fix 4). 아래 test_committed_scnx_matches_a_fresh_rebuild가 그 간극을
+닫는다 — build_spec을 지금 코드로 다시 돌려 tmp_path에 쓰고, 그 바이트가
+커밋된 파일과 정확히 같은지 SHA-256으로 확인한다. 같으면 위 네 테스트가
+검사하는 파일이 지금 코드가 만드는 파일과 같다는 뜻이고, 다르면 04를 다시
+돌려 build/를 재커밋해야 한다는 뜻이다. 결정성 자체(같은 입력 → 같은
+바이트)는 이 비교가 자동으로 함께 증명한다 — 기존 결정성 테스트가 한
+프로세스 안에서 두 번 빌드해 비교하던 것과 달리, 이번에는 그 두 번째
+빌드가 애초에 커밋 시점에 다른 프로세스(04 실행)가 만든 것이라 더 강하다.
 """
+import hashlib
 import json
 from pathlib import Path
 
 import pytest
 
+from vtmak.geometry import BattlefieldLayout
+from vtmak.parser import Event, PatternMap
+from vtmak.ranges import WeaponRanges
+from vtmak.registry import ClassMap, build_registry
 from vtmak.scnx.audit import read_scnx
+from vtmak.scnx.catalog import DisCatalog, TaskCatalog, TaskKinds
+from vtmak.scnx.engagements import EnrichmentConfig
+from vtmak.scnx.fixed import load_fixed
+from vtmak.scnx.pack import ensure_golden
+from vtmak.scnx.spec import build_spec
+from vtmak.scnx.writer import get_writer
 
 ROOT = Path(__file__).resolve().parents[1]
 SCNX = ROOT / "build" / "scnx" / "battle.scnx"
 SLOTS = ROOT / "build" / "engagements" / "slots.jsonl"
+CFG = ROOT / "config"
+EVENTS = ROOT / "build" / "events" / "battle.jsonl"
 
 pytestmark = pytest.mark.skipif(
     not SCNX.exists(), reason="04를 먼저 실행할 것")
@@ -96,3 +121,44 @@ def test_written_scnx_keeps_the_fixed_uav_objects_and_routes():
         if marking in centers:
             route_marking = f"UAV{n}RTE"
             assert route_marking in markings, route_marking
+
+
+def test_committed_scnx_matches_a_fresh_rebuild(tmp_path):
+    """커밋된 build/scnx/battle.scnx가 **지금** 코드로 다시 빌드한 것과
+    바이트 단위로 같은가. scripts/04_compile_scnx.py의 빌드 절차(레지스트리
+    →스펙→writer)를 그대로 재현해 tmp_path에 쓰고 SHA-256을 비교한다 —
+    build/를 실제로 덮어쓰지 않는다.
+
+    다르면 둘 중 하나다: (a) 코드가 바뀌었는데 04를 다시 안 돌려 build/가
+    낡았다 — 04를 다시 돌리고 build/를 재커밋한다. (b) writer나 IdAllocator
+    같은 결정성 불변식이 깨졌다 — 그 자체가 버그다. 이 테스트는 둘을
+    구분하지 않는다(구분은 사람이 diff를 보고 한다), 다만 간극이 조용히
+    지나가는 것만 막는다.
+    """
+    events = [Event(**json.loads(line))
+              for line in EVENTS.read_text(encoding="utf-8").splitlines()
+              if line]
+    layout = BattlefieldLayout.load(CFG / "battlefield_layout.json")
+    pmap = PatternMap.load(CFG / "pattern_map.csv")
+    cmap = ClassMap.load(CFG / "entity_class_map.csv")
+    ranges = WeaponRanges.load(CFG / "weapon_ranges.csv")
+    dis = DisCatalog.load(CFG / "dis_catalog.csv")
+    registry = build_registry(events, cmap, layout.static_ids())
+    fixed = load_fixed(CFG / "fixed_objects.json", ROOT, layout)
+    enrichment_config = EnrichmentConfig.load(CFG / "engagement_enrichment.json")
+
+    spec = build_spec(events, registry, layout, pmap,
+                      TaskCatalog.load(CFG / "task_catalog.csv"),
+                      TaskKinds.load(CFG / "task_kinds.csv"),
+                      dis, ranges,
+                      scenario_id="battle", fixed=fixed,
+                      enrichment_config=enrichment_config)
+
+    golden_path = ensure_golden(ROOT / "yewon_test")
+    out = get_writer("template", str(golden_path)).write(spec, tmp_path)
+
+    rebuilt = hashlib.sha256(out.read_bytes()).hexdigest()
+    committed = hashlib.sha256(SCNX.read_bytes()).hexdigest()
+    assert rebuilt == committed, (
+        "build/scnx/battle.scnx가 현재 코드의 재빌드와 다르다 — "
+        "scripts/04_compile_scnx.py를 다시 돌리고 build/를 재커밋할 것")
