@@ -11,6 +11,7 @@ from vtmak.registry import ClassMap, EntityDef, build_registry
 from vtmak.roster import RosterPlan, filter_events, select_roster
 from vtmak.scnx.catalog import DisCatalog, TaskCatalog, TaskKinds
 from vtmak.scnx.engagements import ActorClock, EnrichmentConfig
+from vtmak.scnx.gates import validate_interaction_plan
 from vtmak.scnx.ids import IdAllocator
 from vtmak.scnx.placement import PlacementRules, build_headings, build_positions
 from vtmak.scnx.plan import SKIP_MIN_RANGE, balanced, build_entity_plan
@@ -930,3 +931,23 @@ def test_no_task_objects_get_no_move_or_fire_after_that_line(spec):
            and s.task_kind in ("move", "move_slow", "follow",
                                "fire_direct", "fire_indirect", "suppress")]
     assert bad == [], bad[:5]
+
+
+def test_interaction_enrichment_static_acceptance(spec):
+    """Task 10 — 상호작용 교전 보강 파이프라인의 최종 정적 수락.
+
+    77건의 원문 교전 + 20~30건의 신규 보강이 각각 직접사격 다음에 제압사격이
+    붙는 형태로 저작되고, 실패가 실측된 find_firing_position/find_cover가
+    최종 PLN에 남지 않으며, G4(교전 슬롯·큐 도달 가능성)가 위반 없이 통과함을
+    한 번에 확인한다. 이 테스트가 통과해도 VR-Forces 런타임 성공을 증명하지
+    않는다 — README의 수동 인수 체크리스트가 그 증거를 모은다.
+    """
+    slots = spec.engagement_slots
+    assert len([s for s in slots if s.origin == "source"]) == 77
+    assert 20 <= len([s for s in slots if s.origin == "enrichment"]) <= 30
+    live = [s for steps in spec.entity_plans.values() for s in steps if s.pln]
+    assert sum(s.task_kind == "fire_direct" for s in live) == len(slots)
+    assert sum(s.task_kind == "suppress" for s in live) == len(slots)
+    assert not any("find_firing_position" in s.pln or "find_cover" in s.pln
+                   for s in live)
+    assert not validate_interaction_plan(spec, EnrichmentConfig.defaults())

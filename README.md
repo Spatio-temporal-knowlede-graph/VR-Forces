@@ -134,6 +134,43 @@ build/stkg/report.md
 
 발사체의 사수를 확정할 수 없는 경우에는 잘못된 관계를 만들지 않고 `object`를 비워 둠
 
+## 7. VR-Forces 런타임 인수 체크리스트 (수동)
+
+`tests/test_spec.py::test_interaction_enrichment_static_acceptance`와 G4
+(`validate_interaction_plan`)는 `.scnx`가 컴파일되고 슬롯·큐 계약을 지킨다는
+것만 증명함. **정적 검사 통과는 VR-Forces 런타임 성공의 증거가 아니다** — 시나리오가
+실제로 끝까지 도는지, 직접사격·제압사격이 관측으로 남는지는 시뮬레이터를 돌려
+새 ground truth를 모아야만 판정할 수 있음. 아래는 그 인수 절차임.
+
+1. `build/scnx/battle.scnx`를 VR-Forces에서 연다. **Ground Clamping**을 켜고
+   Cutoff Distance Scale을 최대로 둔다(아래 실행 순서 절 참고).
+2. 시나리오를 끝까지 실행하고, 추출한 새 ground-truth CSV를 기존 명명 규칙
+   (`*_dataset.csv`)대로 `build/csv/` 아래에 저장한다.
+3. `PYTHONIOENCODING=utf-8 python scripts/05_data_postprocessing.py`를
+   실행한다. exit 0을 확인한다(0이 아니면 행 회계가 안 맞는 입력이 있다는
+   뜻이라 원본 CSV를 먼저 의심한다).
+4. `build/stkg/*_annotated.csv`에서 고유 `(subject, predicate, object)`
+   삼중항 수를 predicate별로 센다.
+5. **판정 기준(둘 다 충족해야 통과):**
+   - 고유 `Fire-Weapon` SPO ≥ 70
+   - 고유 `Provide-Suppressive-Fire-Loc` SPO ≥ 70
+   - 이 두 문턱만이 이번 인수의 pass 조건이다. 다른 predicate 수는 참고용이다.
+6. **반복 행 수와 고유 SPO 수를 반드시 따로 보고한다.** 같은 슬롯이 여러 틱에
+   걸쳐 반복 관측되면 행 수는 쉽게 늘어난다 — 행 수 증가는 성공 지표가
+   아니다. 5번의 판정은 오직 고유 SPO 수로만 한다.
+7. CSV에 나타나지 않은(관측되지 않은) `slot_id`가 있으면
+   `build/engagements/audit.csv`(102 accepted · 80 rejected, 이 저장소
+   기준값)와 대조한다.
+   - 그 `slot_id`가 애초에 `audit.csv`에 없거나 `status=rejected`면 —
+     컴파일 시점에 저작되지 않은 것이 정상이라 통과에 영향 없다.
+   - `status=accepted`인데 CSV에 관측이 없으면 — 저작된 task가 VR-Forces에서
+     실행되지 않았다는 뜻이다. `shooter_id`·`target_id`로 `build/engagements/slots.jsonl`을
+     찾아 어느 predecessor task(이동·대기·직접사격·제압사격 중 어디)가 멈췄는지
+     특정하고, 정확한 `vrfSim.log` 오류와 함께 보고한다. 필드나 값을 조용히
+     완화하기 전에 반드시 이 로그부터 확보한다.
+8. UAV 검출률(관측이 실제로 잡힌 슬롯의 비율)은 측정은 하되 **이번 인수의
+   합격 판정에는 쓰지 않는다** — 합격 기준은 5번의 두 SPO 문턱뿐이다.
+
 ## 실행 순서
 
 ```bash
