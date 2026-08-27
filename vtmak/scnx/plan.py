@@ -60,6 +60,11 @@ class PlanContext(Protocol):
     def actor_coord(self, actor: str, time_s: int, src: str = "") -> Coord: ...
     def ref_kind(self, ref: str) -> str: ...   # ENTITY | COORD
     def unit_leader(self, object_id: str) -> str | None: ...
+    def choose_firing_location(self, entity_class: str, shooter: Coord,
+                               target: Coord) -> tuple[str, Coord] | None: ...
+    def choose_cover_location(self, actor: str, actor_coord: Coord,
+                              threat_coord: Coord
+                              ) -> tuple[str, Coord] | None: ...
 
 
 # pln을 만들지 않은 이유 중 '의도한 것'. VR-Forces가 실행을 거부한다는 사실이
@@ -67,6 +72,10 @@ class PlanContext(Protocol):
 # (템플릿 없음·참조 미해결 등) — G3가 그 둘을 다른 심각도로 다룬다.
 SKIP_UNSUPPORTED = "unsupported_task"     # 모델에 그 task의 컨트롤러가 없다
 SKIP_MIN_RANGE = "below_min_range"        # 간접사격 최소사거리 미달
+# find_firing_position(21/21 실패)·find_cover(다수 모델 실패)를 좌표 이동으로
+# 대체할 때 golden 지형점이 세 제약(위협과 멀어짐·경계 안·최소 이격)을 하나도
+# 만족하지 못한 경우. 실패하는 find task로 되돌아가지 않고 이 사유로 남긴다.
+SKIP_NO_VERIFIED_POSITION = "no_verified_position"
 
 
 @dataclass
@@ -110,7 +119,7 @@ def build_entity_plan(events: list[Event], entity: EntityDef,
     """
     steps: list[PlanStep] = []
     ordered = sorted(events, key=lambda x: (x.time_s, x.event_id))
-    for e in ordered:
+    for i, e in enumerate(ordered):
         slot = slots_by_event.get(e.event_id)
         if slot is not None:
             new_steps = build_engagement_steps(slot, entity, catalog, kinds,
@@ -120,12 +129,29 @@ def build_entity_plan(events: list[Event], entity: EntityDef,
         kind = pattern_map.task_kind_of(e)
         if kind in ("", "noop"):
             continue
-        new_steps = _one(e, entity, kind, catalog, kinds, ranges, ctx,
-                         fire_distance, ordered)
+        if kind == "follow" and _has_later_task(ordered[i + 1:], pattern_map):
+            # 후속 task가 있는 follow는 종단이 아니다. follow-entity는 끝나는
+            # 시각을 모른다(estimate_step_duration이 UNBOUNDED로 돌린다) —
+            # 뒤에 큐를 둔 모든 task가 영영 실행되지 않는다. 원래 목적지(dst)로
+            # 향하는 평범한 이동으로 내린다. 뒤에 아무 task도 없는 종단
+            # follow만 이 분기를 타지 않고 follow로 남는다.
+            kind = "move"
+        if kind in ("move_firing_position", "move_cover"):
+            new_steps = _verified_move(e, entity, kind, catalog, kinds, ctx,
+                                       ordered)
+        else:
+            new_steps = _one(e, entity, kind, catalog, kinds, ranges, ctx,
+                             fire_distance, ordered)
         for s in new_steps:
             clock.advance(s)
         steps.extend(new_steps)
     return steps
+
+
+def _has_later_task(events: list[Event], pattern_map: PatternMap) -> bool:
+    """이 이후에 이 객체가 받을 task_kind가 하나라도 있는가(noop 제외)."""
+    return any(pattern_map.task_kind_of(x) not in ("", "noop")
+              for x in events)
 
 
 # '후속 사격 문장'으로 볼 템플릿. 사격 준비 상태가 된 객체의 위협 대상은
@@ -280,6 +306,113 @@ def _pick_template(kind: str, ref_kind: str, type_group: str,
         if t is not None:
             return t, label
     return None, None
+
+
+# find_firing_position → move_firing_position, hitBy → move_cover가 공유하는
+# '원래 의도' 이름. GT에는 안 나가는 계획 메타데이터로만 남는다(설계 §5).
+_VERIFIED_MOVE_INTENT = {
+    "move_firing_position": "takes_firing_position_against",
+    "move_cover": "takes_cover_from",
+}
+
+
+def _coord_move_step(e: Event, entity: EntityDef, kind: str, intent: str,
+                     intent_object: str, coord: Coord, catalog: TaskCatalog,
+                     kinds: TaskKinds) -> PlanStep:
+    """검증된 좌표 하나로의 이동 단계.
+
+    ref_kind를 무조건 COORD로 고정해 템플릿을 고른다 — _one·_fill이 하듯
+    ctx.ref_kind(threat)를 따라가면 위협 엔티티 자신의 좌표가 X Y Z에 들어가
+    이동이 위협 쪽으로 향해버린다(찾아야 할 버그를 스스로 재현하게 된다).
+    이 함수가 받는 coord는 choose_firing_location/choose_cover_location이
+    이미 검증까지 마친 golden 지형점이므로, 여기서는 그대로 꽂기만 한다.
+    """
+    step = PlanStep(e.event_id, e.time_s, e.template, kind, None, None,
+                    planned_intent=intent, intent_object=intent_object)
+    tmpl, label = _pick_template(kind, "COORD", entity.type_group, catalog,
+                                 kinds)
+    if tmpl is None:
+        # move_cover는 task_kinds.csv에 ENTITY 행만 있다 — 참조(threat)가
+        # 실제로 엔티티이기 때문이다(비고 칸 참고). 행동_후보는 두 행 모두
+        # "좌표로 이동" 하나뿐이라 ENTITY 키로 찾아도 catalog에서 나오는
+        # 템플릿은 COORD 키로 찾았을 때와 완전히 같다 — 아래에서 실제로
+        # 채우는 좌표는 이 조회와 무관하게 인자로 받은 검증된 coord이지
+        # ctx.ref_kind(threat)로 다시 묻지 않으므로 위협 쪽으로 가는 버그는
+        # 재도입되지 않는다.
+        tmpl, label = _pick_template(kind, "ENTITY", entity.type_group,
+                                     catalog, kinds)
+    if tmpl is None:
+        step.issues.append(
+            f"템플릿 없음: kind={kind} ref_kind=COORD/ENTITY "
+            f"type_group={entity.type_group}")
+        return step
+    step.action_label = label
+    if tmpl.task_or_request_type in entity.unsupported_tasks:
+        # move_firing_position·move_cover도 결국 move-to-location-task다 —
+        # 견인 장비처럼 이동 컨트롤러가 아예 없는 모델은 여기서도 똑같이 막힌다
+        # (entity_class_map.csv unsupported_tasks, _one의 같은 검사와 동일 규칙).
+        step.issues.append(
+            f"{entity.entity_class}에 {tmpl.task_or_request_type} 컨트롤러 없음"
+            " — VR-Forces 실측(vrfSim.log)")
+        step.skip_reason = SKIP_UNSUPPORTED
+        return step
+    x, y, z = coord.to_ecef()
+    pln = tmpl.pln.strip().replace("X Y Z", f"{x:.6f} {y:.6f} {z:.6f}")
+    step.pln = with_weapon(pln, entity.weapons)
+    return step
+
+
+def _verified_move(e: Event, entity: EntityDef, kind: str,
+                   catalog: TaskCatalog, kinds: TaskKinds, ctx: PlanContext,
+                   actor_events: list[Event]) -> list[PlanStep]:
+    """find_firing_position(21/21 실패)·find_cover(다수 모델 실패)를 대체한다.
+
+    둘 다 2026-08 vrfSim.log 실측으로 "No controller or Controller is
+    disabled"가 확인된 스크립트 task다. 대체는 그 task를 다시 시도하는 대신
+    컴파일 시점에 좌표를 계산해 평범한 좌표 이동으로 내리는 것이다. 원래
+    의도는 버리지 않는다 — 이 PlanStep의 planned_intent/intent_object에
+    남는다. 둘 다 GT가 읽는 필드가 아니라 저작 메타데이터다.
+
+    검증된 golden 지점이 없으면(choose_firing_location/choose_cover_location이
+    None을 돌려주면) 실패하는 find task로 되돌아가지 않는다 — pln=None +
+    skip_reason=SKIP_NO_VERIFIED_POSITION만 남긴다. G3 C3.5가 skip_reason이
+    붙은 단계를 이미 REPORT로 낮추므로 새 분기가 필요 없다.
+    """
+    step = PlanStep(e.event_id, e.time_s, e.template, kind, None, None)
+    threat = _resolve_ref(e, kind, ctx, kinds, actor_events)
+    if not threat:
+        step.issues.append("참조 대상 없음")
+        return [step]
+
+    intent = _VERIFIED_MOVE_INTENT[kind]
+    actor_id = e.actor or entity.object_id
+    actor_coord = ctx.actor_coord(actor_id, e.time_s, e.src)
+    if kind == "move_firing_position":
+        # threat = next_fire_target: 이 객체가 곧이어 쏠 표적이다. 좌표는
+        # 그 표적을 향한 다른 사격 task(aim 등)와 같은 규칙으로 푼다 —
+        # actor=e.actor(사수)를 줘야 hit_at의 (사수, 표적) 우선순위가 산다.
+        threat_coord = ctx.coord_of(threat, e.time_s, e.actor)
+        loc = ctx.choose_firing_location(entity.entity_class, actor_coord,
+                                         threat_coord)
+    else:
+        # threat = source_obj: 나(e.actor)를 쏜 공격자다. hit_at은
+        # (공격자, 피격자) 순으로 저장되므로 actor 인자를 주면 순서가
+        # 뒤집혀 아무것도 못 찾는다 — 공격자 자신의 추적 위치를 그대로 쓴다.
+        threat_coord = ctx.coord_of(threat, e.time_s)
+        loc = ctx.choose_cover_location(actor_id, actor_coord, threat_coord)
+
+    if loc is None:
+        step.issues.append(
+            "검증된 golden 위치 없음(위협과 멀어짐·경계 안·최소 이격 중 "
+            "하나를 만족하는 지형점이 없다) — find task로 되돌아가지 않는다")
+        step.skip_reason = SKIP_NO_VERIFIED_POSITION
+        step.planned_intent = intent
+        step.intent_object = threat
+        return [step]
+
+    _, coord = loc
+    return [_coord_move_step(e, entity, kind, intent, threat, coord, catalog,
+                             kinds)]
 
 
 # 태스크 템플릿에 무기 이름이 들어가는 자리. variable-data-types 블록의

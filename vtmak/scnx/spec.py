@@ -17,7 +17,9 @@ from ..registry import EntityDef
 from ..roster import unit_of
 from .catalog import DisCatalog, TaskCatalog, TaskKinds
 from .engagements import (ActorClock, EngagementSlot, EnrichmentConfig,
-                          build_source_slots)
+                          build_source_slots,
+                          choose_cover_location as _choose_cover_location,
+                          choose_firing_location as _choose_firing_location)
 from .fixed import FixedObject
 from .ids import IdAllocator
 from .placement import PlacementRules, build_headings, build_positions
@@ -158,12 +160,16 @@ class _Ctx:
                  registry: dict[str, EntityDef],
                  entity_uuids: dict[str, str],
                  events: list[Event],
+                 ranges: WeaponRanges,
+                 enrichment_config: EnrichmentConfig,
                  coords: dict[str, Coord] | None = None) -> None:
         self._layout = layout
         self._ids = ids
         self._reg = registry
         self._uuids = entity_uuids
         self._coords = coords or {}
+        self._ranges = ranges
+        self._enrichment_config = enrichment_config
         self._tracker = PositionTracker(events, registry)
         self._hit_at = engagement_locations(events)
         self.referenced_locs: set[str] = set()
@@ -233,6 +239,32 @@ class _Ctx:
             return self._layout.coord(src)
         return self.coord_of(actor, time_s)
 
+    def choose_firing_location(self, entity_class: str, shooter: Coord,
+                               target: Coord) -> tuple[str, Coord] | None:
+        """find_firing_position 대체.
+
+        직접사거리를 우선 쓰되, 없으면 간접사거리로 넘어간다. '사격 준비'
+        전이는 aimAt(간접사격 준비)과 짝인 상태전이라 실측상 늘 간접사격
+        장비다(2026-08-27: 이 시나리오의 사격 준비 21건 전부가 박격포·자주포·
+        Patriot — 직접사거리가 아예 없다). 직접사거리만 보면 21/21 검증
+        불가로 no_verified_position만 남아 find_firing_position 대체가
+        사실상 죽는다. 보병처럼 직접사거리를 가진 모델이 언젠가 이 전이를
+        타면 그쪽을 우선한다.
+        """
+        range_spec = (self._ranges.spec(entity_class, "direct")
+                     or self._ranges.spec(entity_class, "indirect"))
+        if range_spec is None:
+            return None
+        return _choose_firing_location(self._layout, shooter, target,
+                                       range_spec, reserved=set())
+
+    def choose_cover_location(self, actor: str, actor_coord: Coord,
+                              threat_coord: Coord) -> tuple[str, Coord] | None:
+        """find_cover 대체. occupied는 이동하는 본인을 뺀 나머지 배치 좌표다."""
+        occupied = [c for oid, c in self._coords.items() if oid != actor]
+        return _choose_cover_location(self._layout, actor_coord, threat_coord,
+                                      self._enrichment_config, occupied)
+
 
 def build_spec(events: list[Event], registry: dict[str, EntityDef],
                layout: BattlefieldLayout, pattern_map: PatternMap,
@@ -245,13 +277,20 @@ def build_spec(events: list[Event], registry: dict[str, EntityDef],
     taskable = {oid: d for oid, d in sorted(registry.items()) if d.taskable}
     entity_uuids = {oid: ids.alloc("entity", oid) for oid in taskable}
 
+    # move_firing_position·move_cover(Task 5)가 컴파일 시점에 골든 지점을
+    # 검증하려면 _Ctx가 사거리표와 엄폐 설정을 미리 쥐고 있어야 한다 —
+    # 그래서 슬롯 빌드보다 앞으로 당겨 로드한다.
+    enrichment_config = EnrichmentConfig.load(
+        CONFIG / "engagement_enrichment.json")
+
     # 배치와 방위. 좌표는 대형 배치기가, 방위는 첫 이동 목적지가 정한다.
     # 태스크가 참조하는 좌표(_Ctx)도 이 배치를 봐야 하므로 먼저 만든다.
     # 방위가 먼저다 — 대형은 그 방위에 수직으로 눕는다(방어선이 적을 가로막게).
     rules = placement or PlacementRules.load(CONFIG / "placement_rules.csv")
     headings = build_headings(taskable, events, layout)
     coords = build_positions(taskable, layout, rules, headings)
-    ctx = _Ctx(layout, ids, registry, entity_uuids, events, coords)
+    ctx = _Ctx(layout, ids, registry, entity_uuids, events, ranges,
+              enrichment_config, coords)
 
     spec = ScnxSpec(scenario_id=scenario_id, terrain=layout.terrain,
                     fixed_objects=list(fixed or []))
@@ -281,8 +320,6 @@ def build_spec(events: list[Event], registry: dict[str, EntityDef],
     # 이동·대기·직접사격·제압사격 네 단계로 내린다(설계 §5). suppression_events
     # 기반의 양자택일 대체는 더 이상 쓰지 않는다 — 그 함수는 Task 6이
     # 정리할 다른 계약(spec.py 자체 정리)을 위해 남겨 둔다.
-    enrichment_config = EnrichmentConfig.load(
-        CONFIG / "engagement_enrichment.json")
     source_slots = build_source_slots(events, registry, layout,
                                       enrichment_config)
     slots_by_event: dict[str, EngagementSlot] = {}

@@ -206,6 +206,40 @@ def choose_firing_location(layout: BattlefieldLayout, shooter: Coord,
     return ref, coord
 
 
+def choose_cover_location(layout: BattlefieldLayout, actor: Coord,
+                          threat: Coord, config: EnrichmentConfig,
+                          occupied: list[Coord]) -> tuple[str, Coord] | None:
+    """위협에서 멀어지는 golden 지형점. 없으면 None.
+
+    find_cover가 다수 모델에서 컨트롤러 비활성으로 실패한다는 사실이
+    2026-08 vrfSim.log로 실측됐다(설계 §8). 대체는 스크립트 task가 아니라
+    컴파일 시점에 이 지점을 계산해 좌표 이동으로 내리는 것이다.
+
+    설계 §8의 세 제약을 모두 건다. 위협에서 멀어질 것, 전장 경계(=레이아웃이
+    아는 지명) 안일 것, 다른 객체와 최소 이격을 지킬 것. 셋 중 하나라도
+    못 지키면 이동 task를 만들지 않고 None을 돌려준다 — 실패하는 find_cover로
+    되돌아가지 않는다.
+    """
+    current = ground_distance(actor, threat)
+    choices = []
+    for ref in layout.location_ids():
+        if layout.source_of(ref) != "golden":
+            continue                      # 지형 미확인 점에는 보내지 않는다
+        coord = layout.coord(ref)
+        move = ground_distance(actor, coord)
+        away = ground_distance(coord, threat)
+        if move > config.max_cover_move_m or away <= current:
+            continue
+        if any(ground_distance(coord, o) < config.min_entity_separation_m
+               for o in occupied):
+            continue
+        choices.append((-away, move, ref, coord))
+    if not choices:
+        return None
+    _, _, ref, coord = min(choices)
+    return ref, coord
+
+
 def expected_suppress_spo(
         slots: tuple[EngagementSlot, ...]) -> set[tuple[str, str]]:
     """후처리가 만들 것으로 예상되는 (공격자, 정규화된 표적 위치) 집합.

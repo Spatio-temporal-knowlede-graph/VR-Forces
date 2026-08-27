@@ -162,6 +162,13 @@ def test_references_resolve_to_readable_names(built):
     `_event_ref`는 `events`의 실제 event_id로만 찾으므로 이 단계에서는
     ref_id를 못 되살린다. 슬롯 자체의 참조(shooter/target/target_ref)는
     build/engagements/audit.csv(Task 6의 slot_audit_rows)가 별도로 남긴다.
+
+    take_cover는 Task 5(2026-08-27)에서 move_cover로 바뀌었다 — find_cover
+    (컨트롤러 비활성 실측)를 좌표 이동으로 대체한다. 이 배틀필드는 golden
+    지형점이 21개뿐이고 평균 간격이 250m~2km라 max_cover_move_m=100.0으로는
+    hitBy 77건 전부 no_verified_position이 돼 저작된(live) move_cover가
+    하나도 없다 — 그래서 같은 계약(위협을 X Y Z가 아니라 intent_object로만
+    남기는 좌표 이동)을 실제로 저작되는 move_firing_position으로 확인한다.
     """
     spec, contents, events, kinds = built
     tasks, _, _ = build_rows(spec, contents, kinds, events)
@@ -171,8 +178,10 @@ def test_references_resolve_to_readable_names(built):
     assert live and all(t.ref_id for t in live)
     moves = [t for t in live if t.task_kind == "move"]
     assert moves and all(t.ref_id.startswith("LOC_") for t in moves)
-    cover = [t for t in live if t.task_kind == "take_cover"]
-    assert cover and all(t.ref_kind == "ENTITY" for t in cover)
+    preps = [t for t in live if t.task_kind == "move_firing_position"]
+    assert preps, "move_firing_position 중 저작된 것이 하나도 없다"
+    assert all(t.ref_kind == "COORD" for t in preps), \
+        "좌표 이동은 통제점·엔티티 uuid가 아니라 intent_object로 참조를 남긴다"
 
 
 def test_coordinate_tasks_need_the_events_to_name_their_target(built):

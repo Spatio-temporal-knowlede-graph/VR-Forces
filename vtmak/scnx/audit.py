@@ -229,8 +229,15 @@ def build_rows(spec: ScnxSpec, contents: ScnxContents, kinds: TaskKinds,
             t = actual[i] if i < len(actual) else None
             ref_id, ref_kind = _resolve_ref(t, ent_name, ctl_name)
             if not ref_id:
-                ref_id = _event_ref(by_event.get(step.event_id),
-                                    step.task_kind, kinds)
+                # move_firing_position(Task 5)의 참조_필드는 next_fire_target
+                # 인데, 이건 Event의 실제 속성이 아니라 plan._resolve_ref가
+                # 뒤따르는 사격 이벤트를 스캔해 계산하는 값이다 — _event_ref는
+                # 이 계산을 다시 하지 않으므로 늘 빈 문자열을 돌려준다. 같은
+                # 값이 이미 PlanStep.intent_object(위협 객체 id)에 남아 있으니
+                # 여기서 그걸로 되살린다.
+                ref_id = (_event_ref(by_event.get(step.event_id),
+                                     step.task_kind, kinds)
+                         or step.intent_object)
                 ref_kind = "COORD" if ref_id else ""
             rows.append(TaskRow(
                 object_id=e.object_id, name=e.name, faction=e.faction,

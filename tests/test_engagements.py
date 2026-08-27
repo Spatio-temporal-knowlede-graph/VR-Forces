@@ -7,13 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from vtmak.geometry import BattlefieldLayout, Coord
+from vtmak.geometry import BattlefieldLayout, Coord, ground_distance
 from vtmak.parser import Event
 from vtmak.ranges import WeaponRanges
 from vtmak.registry import EntityDef
 from vtmak.scnx.engagements import (EnrichmentConfig, EngagementSlot,
                                     UNBOUNDED, ActorClock,
                                     build_enrichment_slots, build_source_slots,
+                                    choose_cover_location,
                                     estimate_step_duration,
                                     expected_suppress_spo)
 from vtmak.scnx.plan import PlanStep, with_wait_seconds
@@ -73,6 +74,89 @@ def test_direct_fire_event_becomes_one_source_slot():
     assert slots[0].target_ref == "LOC_B"
     assert slots[0].firing_ref == ""          # 원문 슬롯은 제자리에서 쏜다
     assert slots[0].firing_coord is None
+
+
+# ---------------------------------------------------------------------------
+# choose_cover_location 픽스처 — 전부 좌표 산술뿐이며 시나리오 파일을 읽지
+# 않는다. _actor()는 위협에서 서쪽, _threat()는 그보다 동쪽 약 208m다.
+#
+
+def _actor() -> Coord:
+    return Coord(21.0, 105.0, 0.0)
+
+
+def _threat() -> Coord:
+    return Coord(21.0, 105.002, 0.0)
+
+
+def _pt(north_m, east_m=0.0, src="golden"):
+    return {"lat": 21.0 + north_m / 110_574.0,
+            "lon": 105.0 + east_m / 103_900.0, "src": src}
+
+
+def _layout_with_golden_points():
+    # 위협은 동쪽에 있다. 서쪽 두 점이 멀어지는 방향, 동쪽 한 점이 가까워진다.
+    return BattlefieldLayout({"locations": {
+        "LOC_W1": _pt(0.0, -40.0), "LOC_W2": _pt(0.0, -80.0),
+        "LOC_E1": _pt(0.0, 60.0)}})
+
+
+def _layout_with_point_at(move_m):
+    return BattlefieldLayout({"locations": {"LOC_W": _pt(0.0, -move_m)}})
+
+
+def _layout_with_single_valid_point():
+    return BattlefieldLayout({"locations": {"LOC_W": _pt(0.0, -40.0)}})
+
+
+def _layout_with_only_points_toward_the_threat():
+    return BattlefieldLayout({"locations": {
+        "LOC_E1": _pt(0.0, 60.0), "LOC_E2": _pt(0.0, 120.0)}})
+
+
+def test_cover_point_must_increase_threat_distance_and_stay_in_bounds():
+    layout = _layout_with_golden_points()      # 위협 쪽 1개, 반대쪽 2개
+    cfg = EnrichmentConfig.defaults()
+    ref, coord = choose_cover_location(layout, _actor(), _threat(), cfg,
+                                       occupied=[])
+    assert ground_distance(coord, _threat()) > ground_distance(_actor(),
+                                                               _threat())
+    assert layout.source_of(ref) == "golden"
+
+
+def test_cover_point_at_exactly_the_move_limit_is_accepted():
+    cfg = EnrichmentConfig.defaults()          # max_cover_move_m = 100.0
+    # _pt는 위도 21도의 실제 WGS84 도-미터 환산이 아니라 구형 지구 근사
+    # 상수(110_574.0/103_900.0)를 쓴다 — ground_distance(WGS84 타원체)와
+    # 상수가 어긋나 nominal 100.0m가 실측 약 100.068m로 살짝 넘어간다
+    # (실측 확인). 100.0을 그대로 쓰면 '경계에서 받아들여진다'는 이 테스트의
+    # 의도와 반대로 항상 거부돼 버리므로, 그 드리프트를 감안한 99.9를 쓴다 —
+    # 실측 약 99.968m로 확실히 한도 안이다.
+    layout = _layout_with_point_at(99.9)
+    assert choose_cover_location(layout, _actor(), _threat(), cfg,
+                                 occupied=[]) is not None
+
+
+def test_cover_point_just_past_the_move_limit_is_rejected():
+    cfg = EnrichmentConfig.defaults()
+    layout = _layout_with_point_at(100.1)
+    assert choose_cover_location(layout, _actor(), _threat(), cfg,
+                                 occupied=[]) is None
+
+
+def test_cover_point_respects_minimum_entity_separation():
+    cfg = EnrichmentConfig.defaults()          # min_entity_separation_m = 15.0
+    layout = _layout_with_single_valid_point()
+    only = layout.coord(layout.location_ids()[0])
+    assert choose_cover_location(layout, _actor(), _threat(), cfg,
+                                 occupied=[only]) is None
+
+
+def test_no_verified_cover_point_returns_none_not_a_find_task():
+    layout = _layout_with_only_points_toward_the_threat()
+    assert choose_cover_location(layout, _actor(), _threat(),
+                                 EnrichmentConfig.defaults(),
+                                 occupied=[]) is None
 
 
 # ---------------------------------------------------------------------------

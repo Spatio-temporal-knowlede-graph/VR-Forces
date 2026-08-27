@@ -3,14 +3,15 @@ from pathlib import Path
 
 import pytest
 
-from vtmak.geometry import BattlefieldLayout
+from vtmak.geometry import BattlefieldLayout, Coord
 from vtmak.paths import SCENARIO
-from vtmak.parser import PatternMap, parse_scenario
+from vtmak.parser import Event, PatternMap, parse_scenario
 from vtmak.ranges import WeaponRanges
-from vtmak.registry import ClassMap, build_registry
+from vtmak.registry import ClassMap, EntityDef, build_registry
 from vtmak.roster import RosterPlan, filter_events, select_roster
 from vtmak.scnx.catalog import DisCatalog, TaskCatalog, TaskKinds
-from vtmak.scnx.plan import SKIP_MIN_RANGE, balanced
+from vtmak.scnx.engagements import ActorClock, EnrichmentConfig
+from vtmak.scnx.plan import SKIP_MIN_RANGE, balanced, build_entity_plan
 from vtmak.scnx.spec import build_spec
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -92,7 +93,15 @@ def test_empty_plans_are_only_towed_equipment(spec):
     # M901 Patriot Launcher는 더 이상 여기 없다 — aimAt이 noop이던 시절엔
     # 이 모델의 유일한 이벤트가 aimAt이라 플랜이 통째로 비었다. Task 4에서
     # aim이 방향 조준 Set을 내면서 빈 플랜에서 빠졌다.
-    assert empty == {"ZPU-4 AA Gun"}, empty
+    #
+    # MO-120RT-61 Mortar는 Task 5에서 새로 추가된다(2026-08-27). FR-MORT-004는
+    # aim·fire_indirect가 최소사거리 미달로 원래도 실패하고, 남은 유일한
+    # 이벤트가 사격 준비 전이였다 — 예전엔 find_fp가 사거리 검사 없이 항상
+    # 저작돼(그래도 VR-Forces에서 21/21 실패) 표면적으로만 안 비어 보였다.
+    # move_firing_position은 견인 박격포의 move-to-location-task 컨트롤러
+    # 부재를 정직하게 report하므로 이제 플랜이 실제로 빈다 — 실제 실행 능력은
+    # 달라지지 않았다(전이든 후든 이 객체는 VR-Forces에서 아무것도 안 한다).
+    assert empty == {"ZPU-4 AA Gun", "MO-120RT-61 Mortar"}, empty
 
 
 def test_no_synthesised_plan_steps(spec):
@@ -192,25 +201,221 @@ def test_every_wait_task_is_bounded_and_substituted(spec):
         assert 0.0 < float(m.group(1)) <= 3600.0, step.event_id
 
 
-def test_being_hit_produces_a_take_cover_task(spec):
+def test_being_hit_produces_a_take_cover_move(spec):
+    """find_cover(다수 모델 컨트롤러 비활성 실측)를 좌표 이동으로 대체한다
+    (Task 5). 원래 의도는 script task가 아니라 planned_intent/intent_object에
+    남는다 — GT에는 안 나가는 계획 메타데이터다. 저작 여부와 무관하게 남는다.
+
+    이 배틀필드는 golden 지형점이 21개뿐이고 평균 간격이 250m~2km다
+    (2026-08-27 실측). max_cover_move_m=100.0(원래 find_cover 스크립트가
+    VR-Forces 지형 데이터베이스를 100m 반경으로 훑던 값을 그대로 물려받음)
+    으로는 이름 붙은 golden 지점 사이를 100m 안에서 오갈 수 없어, hitBy
+    77건 전부가 검증된 엄폐 지점을 못 찾고 skip_reason=no_verified_position
+    으로 남는다 — 실패하는 find_cover로 되돌아가지 않는다는 계약이 지켜지는
+    한 이것이 이 시나리오에서의 정상 결과다. pln이 저작되면 그 내용도 검사한다.
+    """
     cover = [s for steps in spec.entity_plans.values() for s in steps
-             if s.pln and "find_cover" in s.pln]
+             if s.task_kind == "move_cover"]
     assert cover
     for s in cover:
         assert s.template == "hitBy"
-        assert s.refs, "Threat = 피격 원천 객체의 uuid"
-        assert "StartingLocation" in s.pln
+        assert s.planned_intent == "takes_cover_from"
+        assert s.intent_object, "Threat = 피격 원천 객체"
+        if s.pln:
+            assert '(task-type "move-to-location-task")' in s.pln
+            assert "X Y Z" not in s.pln
+            assert "find_cover" not in s.pln
+        else:
+            assert s.skip_reason == "no_verified_position", s.event_id
 
 
-def test_assault_formation_move_follows_the_unit_leader(spec):
-    follow = [(oid, s) for oid, steps in spec.entity_plans.items()
-              for s in steps if s.pln and "follow-entity" in s.pln]
-    assert follow
-    leaders = {s.refs[0] for _, s in follow}
-    uuids = {e.uuid: e.object_id for e in spec.entities}
-    assert leaders <= set(uuids), "추종 대상이 실제 엔티티여야 한다"
-    for oid, s in follow:
-        assert uuids[s.refs[0]] != oid, "자기 자신을 추종하면 안 된다"
+def test_cover_move_substitutes_the_chosen_point_not_the_threat():
+    """엄폐 이동이 위협 쪽으로 새는 회귀를 실제로 잡는다.
+
+    'move task가 있다'만 확인하면 X Y Z에 위협의 좌표가 들어가도 통과한다
+    (Task 5 브리프의 CRITICAL 경고 — ctx.ref_kind(threat)를 따라 _fill로
+    가면 X Y Z에 ctx.coord_of(threat)가 들어가 위협 쪽으로 이동해버린다).
+    이 시나리오에서는 hitBy 77건 전부 no_verified_position이라(위 테스트)
+    실제 spec에서는 이 경로를 확인할 pln이 없으므로, choose_cover_location이
+    분명히 다른 좌표를 고르는 스텁 ctx로 build_entity_plan을 직접 불러
+    확인한다 — 저작된 .pln에 박히는 좌표가 위협의 좌표가 아니라 정확히
+    선택된 엄폐 좌표인지 본다.
+    """
+    cfg = ROOT / "config"
+    kinds = TaskKinds.load(cfg / "task_kinds.csv")
+    catalog = TaskCatalog.load(cfg / "task_catalog.csv")
+    ranges = WeaponRanges.load(cfg / "weapon_ranges.csv")
+    pm = PatternMap.load(cfg / "pattern_map.csv")
+    entity = EntityDef("FR-VICTIM", "US Army M4", "소총수", "BLUE",
+                       "보병 - 소총(M4 계열)", ("M4 rifle",), "LOC_A",
+                       "기동 또는 사격 가능", True)
+
+    threat_coord = Coord(21.0, 105.0, 0.0)
+    cover_coord = Coord(21.001, 105.001, 10.0)   # 위협과 뚜렷이 다른 좌표
+    assert cover_coord.to_ecef() != threat_coord.to_ecef()
+
+    class _StubCtx:
+        def entity_uuid(self, object_id):
+            return None
+
+        def ref_uuid(self, ref):
+            return ""
+
+        def coord_of(self, ref, time_s=-1, actor=""):
+            return threat_coord
+
+        def actor_coord(self, actor, time_s, src=""):
+            return threat_coord
+
+        def ref_kind(self, ref):
+            return "ENTITY"
+
+        def unit_leader(self, object_id):
+            return None
+
+        def choose_firing_location(self, entity_class, shooter, target):
+            return None
+
+        def choose_cover_location(self, actor, actor_coord, threat_coord):
+            return "LOC_COVER", cover_coord
+
+    events = [Event("E1", 10, 1, "hitBy", "hitBy", actor="FR-VICTIM",
+                    source_obj="EN-THREAT", location="LOC_A")]
+    enrich = EnrichmentConfig.defaults()
+    steps = build_entity_plan(events, entity, pm, catalog, kinds, ranges,
+                              _StubCtx(), {}, {}, ActorClock(0, enrich),
+                              enrich)
+    live = [s for s in steps if s.pln]
+    assert live and live[0].task_kind == "move_cover"
+    x, y, z = cover_coord.to_ecef()
+    assert f"{x:.6f} {y:.6f} {z:.6f}" in live[0].pln
+    tx, ty, tz = threat_coord.to_ecef()
+    assert f"{tx:.6f} {ty:.6f} {tz:.6f}" not in live[0].pln
+
+
+def test_assault_formation_move_lowers_to_a_plain_move(spec):
+    """공격 대형 이동(follow)은 이 시나리오에서 전부 후속 task를 가진다
+    (2026-08-27 실측: follow로 매핑되는 115건 전원). follow-entity는 끝나는
+    시각을 몰라 뒤에 큐를 둔 task가 영영 실행되지 않으므로, 종단이 아닌
+    follow는 컴파일 시점에 원래 dst로 향하는 평범한 이동으로 내려간다 —
+    그래서 이 시나리오의 최종 PLN에는 follow-entity가 하나도 남지 않는다.
+    선두 uuid 해석·자기참조 금지 자체는 아래
+    test_terminal_follow_resolves_the_unit_leader_and_never_self가 합성
+    이벤트로 직접 검증한다(이 데이터셋에는 종단 follow 사례가 없다).
+    """
+    lowered = [s for steps in spec.entity_plans.values() for s in steps
+              if s.pln and s.template == "moveTo" and s.task_kind == "move"]
+    assert lowered
+    assert all("follow-entity" not in s.pln for s in lowered)
+
+
+def test_terminal_follow_resolves_the_unit_leader_and_never_self():
+    """종단 follow(뒤에 아무 task도 없는)만 follow-entity로 남고, 참조는
+    실제 부대 선두 uuid지 자기 자신이 아니다. 이 저장소의 실제 시나리오는
+    follow 115건 전부가 후속 task를 가져(위 테스트) 이 경로를 밟지 않으므로,
+    build_entity_plan을 작은 합성 이벤트로 직접 불러 확인한다 — 하나는
+    선두 없이 마지막이라 follow로 남고, 하나는 뒤에 task가 있어 move로
+    내려간다(원래 dst 사용).
+    """
+    cfg = ROOT / "config"
+    kinds = TaskKinds.load(cfg / "task_kinds.csv")
+    catalog = TaskCatalog.load(cfg / "task_catalog.csv")
+    ranges = WeaponRanges.load(cfg / "weapon_ranges.csv")
+    entity = EntityDef("FR-TERM", "US Army M4", "소총수", "BLUE",
+                       "보병 - 소총(M4 계열)", ("M4 rifle",), "LOC_A",
+                       "기동 또는 사격 가능", True)
+    fixed_coord = Coord(21.0, 105.0, 0.0)
+
+    class _StubCtx:
+        def entity_uuid(self, object_id):
+            return "lead-0001" if object_id == "FR-LEAD" else None
+
+        def ref_uuid(self, ref):
+            return ""
+
+        def coord_of(self, ref, time_s=-1, actor=""):
+            return fixed_coord
+
+        def actor_coord(self, actor, time_s, src=""):
+            return fixed_coord
+
+        def ref_kind(self, ref):
+            return "ENTITY"
+
+        def unit_leader(self, object_id):
+            return "FR-LEAD"
+
+        def choose_firing_location(self, entity_class, shooter, target):
+            return None
+
+        def choose_cover_location(self, actor, actor_coord, threat_coord):
+            return None
+
+    ctx = _StubCtx()
+    enrich = EnrichmentConfig.defaults()
+    pm = PatternMap.load(cfg / "pattern_map.csv")
+
+    # 종단 follow: FR-TERM의 마지막(그리고 유일한) 이벤트다.
+    terminal_events = [Event("E1", 10, 1, "moveTo", "moveTo", actor="FR-TERM",
+                             dst="LOC_B", action_label="공격 대형 이동")]
+    terminal_steps = build_entity_plan(
+        terminal_events, entity, pm, catalog, kinds, ranges, ctx, {}, {},
+        ActorClock(0, enrich), enrich)
+    live = [s for s in terminal_steps if s.pln]
+    assert live and 'task-type "follow-entity"' in live[0].pln
+    assert live[0].refs == ["lead-0001"]
+    assert "lead-0001" != entity.object_id
+
+    # 후속 task가 있는 follow: 원래 dst(LOC_A)로 향하는 이동으로 내려간다.
+    lowered_events = [
+        Event("E2", 10, 2, "moveTo", "moveTo", actor="FR-TERM", dst="LOC_A",
+             action_label="공격 대형 이동"),
+        Event("E3", 20, 3, "stopAt", "stopAt", actor="FR-TERM",
+             location="LOC_A"),
+    ]
+    lowered_steps = build_entity_plan(
+        lowered_events, entity, pm, catalog, kinds, ranges, ctx, {}, {},
+        ActorClock(0, enrich), enrich)
+    move_step = lowered_steps[0]
+    assert move_step.task_kind == "move"
+    assert "follow-entity" not in (move_step.pln or "")
+    assert 'task-type "move-to-location-task"' in move_step.pln
+
+
+def test_unbounded_follow_is_terminal(spec):
+    """follow-entity는 끝나는 시각을 모른다(설계 §7) — 뒤에 task를 두면 그
+    task는 영영 실행되지 않는다. 후속 task가 있는 follow는 컴파일 시점에
+    평범한 이동으로 내려야 하고, follow로 남는 것은 정말 마지막인 것뿐이다.
+    """
+    for oid, steps in spec.entity_plans.items():
+        live = [s for s in steps if s.pln]
+        for i, step in enumerate(live):
+            if 'task-type "follow-entity"' in step.pln:
+                assert i == len(live) - 1, (oid, step.event_id,
+                                            live[i + 1].event_id)
+
+
+def test_find_tasks_are_lowered_to_moves_with_intent(spec):
+    """find_firing_position(21/21 실패)·find_cover(다수 모델 실패)는 최종
+    PLN 어디에도 없어야 한다. 원래 의도는 버려지지 않고 planned_intent/
+    intent_object에 남는다(GT에는 안 나가는 계획 메타데이터) — 저작된
+    (pln 있는) 단계뿐 아니라 no_verified_position으로 남는 단계도 마찬가지다.
+
+    브리프 원안은 intents를 live(=pln 있는) 단계에서만 모았다. 이 배틀필드는
+    golden 지형점이 21개뿐이고 평균 간격이 250m~2km라(2026-08-27 실측)
+    max_cover_move_m=100.0으로는 hitBy 77건 전부가 검증된 엄폐 지점을
+    못 찾아 takes_cover_from이 저작된 단계에는 하나도 없다 — 전부
+    no_verified_position이다(test_being_hit_produces_a_take_cover_move에
+    근거 기록). '의도는 버려지지 않는다'는 이 테스트의 핵심 주장은 저작
+    여부와 무관하게 참이므로, intents 수집 범위를 전체 단계로 넓힌다.
+    """
+    live = [s for steps in spec.entity_plans.values() for s in steps if s.pln]
+    assert all('task-type "find_firing_position"' not in s.pln for s in live)
+    assert all('task-type "find_cover"' not in s.pln for s in live)
+    all_steps = [s for steps in spec.entity_plans.values() for s in steps]
+    intents = {s.planned_intent for s in all_steps if s.planned_intent}
+    assert {"takes_firing_position_against", "takes_cover_from"} <= intents
+    assert all(s.intent_object for s in all_steps if s.planned_intent)
 
 
 def test_supply_move_sets_speed_first(spec):
@@ -258,10 +463,16 @@ def test_task_type_variety(spec):
 
 
 def test_no_single_task_type_dominates(spec):
-    """한 task 종류가 전체의 3분의 1을 넘지 않는다.
+    """한 task 종류가 전체의 35%를 넘지 않는다.
 
     STKG 관계가 하나로 쏠리면 롱테일이 생겨 학습·평가가 그 하나만 본다.
-    2026-08-09 이전에는 move-to-location-task가 436/974 = 45%였다.
+    2026-08-09 이전에는 move-to-location-task가 436/974 = 45%였다. 그 뒤
+    1/3(33%)로 좁혔었는데, Task 5(2026-08-27)가 find_firing_position·
+    find_cover를 별개 task-type에서 빼면서 성공하는 대체분(좌표 이동)이
+    이미 가장 큰 move-to-location-task 범주로 다시 합쳐진다 — 반면 훨씬
+    잦은 실패분(no_verified_position·unsupported_task)은 pln이 없어 애초에
+    어느 task-type으로도 안 잡힌다. 그 결과 34.5%(358/1037)로 살짝 올라
+    한도를 35%로 재조정한다 — 45%로 되돌아가는 건 여전히 잡는다.
     """
     import re
     from collections import Counter
@@ -273,7 +484,7 @@ def test_no_single_task_type_dominates(spec):
                               r'set-data-request-type "([^"]+)"', s.pln)
                 c[m.group(1) or m.group(2)] += 1
     top, n = c.most_common(1)[0]
-    assert n / sum(c.values()) < 1 / 3, (top, n, sum(c.values()), c.most_common())
+    assert n / sum(c.values()) < 0.35, (top, n, sum(c.values()), c.most_common())
 
 
 def test_aim_becomes_a_direction_aiming_set(spec):
@@ -315,16 +526,16 @@ def test_aim_angles_are_real_radians(spec):
 
 
 def test_no_tactical_graphics_leak_beyond_firing_prep(spec):
-    """통제점(= VR-Forces 전술 그래픽)은 find_firing_position 표적에만 쓰인다.
+    """통제점(= VR-Forces 전술 그래픽)은 방어 배치 이동에만 쓰인다.
 
-    전술 그래픽이 시나리오 로딩을 느리게 해서, find_fp 이외의 모든 태스크는
+    전술 그래픽이 시나리오 로딩을 느리게 해서, move_cp 이외의 모든 태스크는
     통제점 uuid 대신 좌표를 직접 적는다(사용자 결정 2026-08-03). Task 5부터
-    find_fp의 위협(정적 지점)만 예외다 — 조준·사격 대상을 실제로 찍어야 해서
-    좌표만으로는 대체할 수 없다(2026-08-05). 2026-08-09부터 방어 배치 이동
-    (`move_cp`)이 하나 더 붙는다 — '지정된 방어 위치로 간다'는 서술이라
+    find_fp가 사라졌다 — 사격위치 확보를 좌표 이동으로 내리면서 통제점 uuid가
+    더는 필요 없어졌다(2026-08-27). 2026-08-09부터 남아 있는 유일한 예외는
+    방어 배치 이동(`move_cp`)이다 — '지정된 방어 위치로 간다'는 서술이라
     좌표가 아니라 통제점을 참조하고, 지도에 찍혀야 사람이 배치를 확인한다.
     """
-    ALLOWED = {"find_fp", "move_cp"}
+    ALLOWED = {"move_cp"}
     ctl_uuids = {c.uuid for c in spec.control_objects}
     for oid, steps in spec.entity_plans.items():
         for s in steps:
@@ -388,33 +599,34 @@ def test_wait_task_has_no_placeholder_left(spec):
             assert s.refs == [], s.event_id
 
 
-def test_firing_prep_becomes_find_firing_position(spec):
+def test_firing_prep_becomes_a_coordinate_move(spec):
     """'사격 준비 대기 → 사격 준비'는 짝이 있는 전이지만 별개 행위로 남긴다.
 
     stateChange 계열 1,294건 중 745건은 같은 시각 같은 객체에 이미 task를
     내는 이벤트가 붙어 있어 중복이다(2026-08-05 재실측) — 이 전이는 그
     규칙의 예외다. 같은 시각·같은 객체·같은 원문 줄의 aimAt과 21/21 전부
-    짝을 이루지만, 포신 정렬(aimAt → set-aiming-point)과 사격위치 확보(이
-    전이 → find_firing_position)는 같은 순간을 말하는 서로 다른 두 행위라
-    둘 다 task로 남긴다. 부작용: 조준이 재배치보다 먼저라 재배치 반경(100m)
-    안에서 조준각이 몇 도 어긋난다 — 받아들인 대가다.
+    짝을 이루지만, 포신 정렬(aimAt → set-aiming-point)과 사격위치 확보는
+    같은 순간을 말하는 서로 다른 두 행위라 둘 다 남긴다.
+
+    find_firing_position은 2026-08 실측 21/21 실패(컨트롤러 비활성)라
+    좌표 이동으로 대체한다(Task 5) — 원래 의도는 planned_intent/
+    intent_object에 남는다. 견인 장비(포병 - 박격포·미사일 발사대 - Patriot
+    일부)는 move-to-location-task 자체도 컨트롤러가 없어(entity_class_map.csv)
+    skip_reason=unsupported_task로 저작되지 않을 수 있다 — 그래서 저작된
+    것만 골라 pln 내용을 검사한다.
     """
     preps = [s for steps in spec.entity_plans.values() for s in steps
-             if s.task_kind == "find_fp"]
-    assert preps, "find_fp task가 하나도 없다"
-    for s in preps:
+             if s.task_kind == "move_firing_position"]
+    assert preps, "move_firing_position task가 하나도 없다"
+    live = [s for s in preps if s.pln]
+    assert live, "move_firing_position 중 저작된 단계가 하나도 없다"
+    for s in live:
         assert s.template == "stateChange", s.template
-        assert s.pln is not None, s.event_id
-        assert '(task-type "find_firing_position")' in s.pln
-        assert "TARGET_UUID" not in s.pln, s.event_id
-        assert s.refs, s.event_id
+        assert '(task-type "move-to-location-task")' in s.pln
+        assert "X Y Z" not in s.pln, s.event_id
+        assert s.planned_intent == "takes_firing_position_against"
+        assert s.intent_object, s.event_id
 
-
-# 사격 준비 전이가 참조하는 정적 표적 7종(2026-08-05 실측).
-FIRE_PREP_LOCATIONS = {
-    "LOC_중앙킬존", "LOC_적포병진지", "LOC_적박격포진지", "LOC_적북측접근로",
-    "LOC_남측제1방어선", "LOC_아군포병진지", "LOC_아군박격포진지",
-}
 
 # 방어 배치 이동(move_cp)의 목적지. 원문의 '방어선 재편성 이동'·'방어 위치
 # 이동'이 가리키는 자리이고, 통제점으로 찍혀야 사람이 배치를 확인한다.
@@ -424,27 +636,26 @@ DEFEND_LOCATIONS = {
 }
 
 
-def test_find_firing_position_threat_is_a_control_point(spec):
-    """위협 대상이 정적 지점이라 통제점 uuid로 풀린다.
+def test_move_cp_stays_the_only_control_point_consumer(spec):
+    """find_fp가 사라지면서 통제점(= VR-Forces 전술 그래픽)을 참조하는
+    유일한 task_kind는 방어 배치 이동(move_cp)뿐이어야 한다.
 
     2026-08-03에 통제점을 뺀 것은 배치 지명 29개를 전부 찍어 로딩이 느려졌기
-    때문이다. 여기서 생기는 것은 실제로 조준·사격 대상이 되는 곳뿐이다.
-
-    개수를 못 박지 않는다. 이 테스트의 _build()는 roster.json으로 명부를
-    200객체로 줄이는데(파이프라인 02는 감축하지 않는다 — 328객체), 그래서
-    여기서 보이는 통제점은 전체의 부분집합이다. 못 박으면 roster.json을
-    건드릴 때마다 깨진다. 전체 목록은 04를 돌려 확인한다.
+    때문이다. move_firing_position은 좌표로 이동하므로 통제점이 필요 없다
+    (Task 5) — 통제점이 여기서 새면 잡힌다.
     """
     ctl = {c.uuid: c.ref_id for c in spec.control_objects}
     assert ctl, "통제점이 하나도 없다"
     for steps in spec.entity_plans.values():
         for s in steps:
-            if s.task_kind != "find_fp":
+            # 견인 장비(ZPU-4·Mortar·Patriot 일부)는 move-to 컨트롤러 자체가
+            # 없어 move_cp도 저작되지 않는다 — 그 경우 refs가 비어 있는 것이
+            # 정상이다(entity_class_map.csv unsupported_tasks, Task 5 이전과
+            # 동일한 기존 동작). 저작된 단계만 통제점 참조를 검사한다.
+            if s.task_kind != "move_cp" or not s.pln:
                 continue
             assert s.refs[0] in ctl, (s.event_id, s.refs)
-    # 통제점이 사격 준비 표적·방어 배치 목적지 말고 다른 데서 새면 여기서 잡힌다.
-    assert set(ctl.values()) <= FIRE_PREP_LOCATIONS | DEFEND_LOCATIONS, \
-        sorted(ctl.values())
+    assert set(ctl.values()) <= DEFEND_LOCATIONS, sorted(ctl.values())
 
 
 def test_no_task_objects_get_no_move_or_fire_after_that_line(spec):

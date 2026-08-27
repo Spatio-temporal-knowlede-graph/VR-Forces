@@ -22,7 +22,7 @@ def test_ref_kind_selects_a_different_label_list(kinds):
 
 
 def test_ref_field_and_fire_kind_are_per_task_kind(kinds):
-    assert kinds.ref_field("take_cover") == "source_obj"
+    assert kinds.ref_field("move_cover") == "source_obj"
     assert kinds.ref_field("follow") == "unit_leader"
     assert kinds.ref_field("move") == "dst"
     assert kinds.fire_kind("fire_indirect") == "indirect"

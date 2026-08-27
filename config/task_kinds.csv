@@ -14,7 +14,7 @@ aim,ENTITY,target,indirect,객체 조준,,,
 aim,COORD,target,indirect,방향 조준,,,
 suppress,ENTITY,target,direct,제압사격,,,표적 좌표만 필요(uuid 불필요)
 suppress,COORD,target,direct,제압사격,,,
-take_cover,ENTITY,source_obj,,피격 후 엄폐,,,Threat = 피격 원천 객체
 wait,*,,,대기,,,참조 대상 없음 — 정지·잔류 표현
 follow,ENTITY,unit_leader,,대형 추종 이동,,,부대 선두를 추종
-find_fp,COORD,next_fire_target,,사격위치 탐색,,,"후속 사격 문장의 표적을 위협으로 쓴다. 사거리 검사 안 함 — 사격이 아니라 위치 탐색이다. ENTITY 변형은 없다 — 표적이 살아있는 엔티티가 되면 kinds.get(""find_fp"",""ENTITY"")가 None을 돌려줘 템플릿 없음으로 G3 C3.5가 BLOCK한다(의도된 하드 스톱, 조용히 빠지지 않는다). 참조_필드는 시간 상한 없이 앞으로 스캔한다 — 지금은 전부 같은 원문 줄에서 잡히지만 먼 미래의 사격 이벤트가 표적으로 잘못 묶일 수 있다(시간창은 의도적으로 범위 밖 — 여기서 넣지 않는다)"
+move_firing_position,COORD,next_fire_target,,좌표로 이동,,,"사격위치 탐색 대체 — find_firing_position은 2026-08 실측 21/21 실패(컨트롤러 비활성). 위협 표적과 사거리로 사격 지점을 컴파일 시 계산해 좌표 이동으로 내린다. 원래 의도는 PlanStep.planned_intent에 남는다"
+move_cover,ENTITY,source_obj,,좌표로 이동,,,"피격 후 엄폐 대체 — find_cover는 다수 모델에서 컨트롤러 비활성. 위협에서 멀어지는 golden 지형점을 골라 좌표 이동으로 내린다. Threat = 피격 원천 객체"
