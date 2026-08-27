@@ -615,7 +615,7 @@ def test_task_type_variety(spec):
 
 def test_no_task_family_dominates(spec):
     """'어딘가로 이동한다'는 하나의 관계 부류(move-to-location-task +
-    move-to)가 전체의 58%를 넘지 않는다.
+    move-to)가 전체의 52.5%를 넘지 않는다.
 
     test_no_single_task_type_dominates(바로 아래)는 task-type 하나만 본다
     — 그런데 move-to-location-task와 move-to는 둘 다 '어딘가로 간다'는
@@ -634,7 +634,14 @@ def test_no_task_family_dominates(spec):
     Task 6(2026-08-27)이 신규 교전 25건을 슬롯으로 얹은 뒤 재측정:
     613/1221 = 50.20%. fire-at-target·provide_suppressive_fire_loc이
     77→102로 늘고 wait-duration도 늘어(새 슬롯의 대기) move류 비중이
-    오히려 더 내려갔다 — 58% 한도를 옮길 필요가 없다.
+    오히려 더 내려갔다 — 58% 한도를 옮길 필요가 없었다.
+
+    리뷰 라운드 2 Fix 1(2026-08-27, 엄폐 지점 이격 폐기)이 엄폐 이동
+    저작률을 52/77에서 74/77로 끌어올려 move-to-location-task가 다시
+    늘었다 — 재측정 635/1265 = 50.20%. 우연히도 비율 자체는 거의 그대로다
+    (엄폐 이동 22건 증가가 총량도 44건 늘려 비중을 상쇄했다). 58%는 이제
+    측정값보다 7.8포인트나 높아 회귀를 잡지 못한다 — Fix 9(같은 라운드)
+    지시대로 측정값에서 2포인트 남짓 위로 다시 잡는다: 52.5%.
     """
     import re
     from collections import Counter
@@ -647,11 +654,11 @@ def test_no_task_family_dominates(spec):
                 c[m.group(1) or m.group(2)] += 1
     total = sum(c.values())
     family = c.get("move-to-location-task", 0) + c.get("move-to", 0)
-    assert family / total < 0.58, (family, total, c.most_common())
+    assert family / total < 0.525, (family, total, c.most_common())
 
 
 def test_no_single_task_type_dominates(spec):
-    """한 task 종류가 전체의 37%를 넘지 않는다.
+    """한 task 종류가 전체의 36.5%를 넘지 않는다.
 
     STKG 관계가 하나로 쏠리면 롱테일이 생겨 학습·평가가 그 하나만 본다.
 
@@ -698,7 +705,15 @@ def test_no_single_task_type_dominates(spec):
     Task 6(2026-08-27)이 신규 교전 25건(직접·제압사격 각 25건, 대기·이동
     포함)을 슬롯으로 얹은 뒤 재측정: 415/1221 = 33.99% — fire-at-target·
     provide_suppressive_fire_loc이 77→102로 함께 늘어 top 비율은 오히려
-    내려갔다. 37% 한도를 옮길 필요가 없다.
+    내려갔다. 37% 한도를 옮길 필요가 없었다.
+
+    리뷰 라운드 2 Fix 1(2026-08-27, 엄폐 지점 이격 폐기)이 엄폐 이동
+    저작률을 52/77에서 74/77로 끌어올렸다 — 재측정 437/1265 = 34.55%다.
+    이격 검증·재배정 로직 자체가 없어졌을 뿐 golden 지점 수는 그대로라
+    move-to-location-task 비중은 소폭만 올랐다. 37%는 이제 측정값보다
+    2.45포인트 위인데, 지난 두 번의 재조정(35%→40%→37%)이 전부 "이 정도면
+    여유 있다"는 판단으로 결국 옮겨졌던 이력을 고려해 Fix 9 지시대로 이번엔
+    측정값에서 2포인트 남짓 위로 다시 못 박는다: 36.5%.
     """
     import re
     from collections import Counter
@@ -710,7 +725,7 @@ def test_no_single_task_type_dominates(spec):
                               r'set-data-request-type "([^"]+)"', s.pln)
                 c[m.group(1) or m.group(2)] += 1
     top, n = c.most_common(1)[0]
-    assert n / sum(c.values()) < 0.37, (top, n, sum(c.values()), c.most_common())
+    assert n / sum(c.values()) < 0.365, (top, n, sum(c.values()), c.most_common())
 
 
 def test_aim_becomes_a_direction_aiming_set(spec):
