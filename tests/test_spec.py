@@ -242,12 +242,14 @@ def test_being_hit_produces_a_take_cover_move(spec):
     남는다 — GT에는 안 나가는 계획 메타데이터다. 저작 여부와 무관하게 남는다.
 
     max_cover_move_m=400.0(2026-08-27 실측으로 100.0에서 조정 — golden
-    지점 21개의 간격이 246~832m라 100m로는 아예 저작되지 않았다)과 반원형
-    고리 배치(같은 지점, 리뷰 라운드 1)로 hitBy 77건 중 52건이 저작되고
-    25건이 skip_reason=no_verified_position이다(이동예산·이격을 오프셋
-    좌표까지 재검증하며 실측). '전부 스킵'이던 시절의 가드 부재를 되돌리지
-    않도록 저작된 단계가 실제로 있는지 먼저 확인한다 — live가 조용히
-    0으로 돌아가면 이 assert가 먼저 잡는다.
+    지점 21개의 간격이 246~832m라 100m로는 아예 저작되지 않았다)로 hitBy
+    77건 중 74건이 저작되고 3건이 skip_reason=no_verified_position이다.
+    목적지는 골든 지점 그 자체이고, 여러 객체가 같은 지점을 공유해도
+    벌려 세우지 않는다(설계 §8 개정, 2026-08-27, 사용자 결정 — 벌리면
+    목적지가 지명 중심에서 15~90m 밀려나 후처리 snap이 대부분을 이름
+    없는 좌표 노드로 남긴다는 것이 실측으로 확인됐다). '전부 스킵'이던
+    시절의 가드 부재를 되돌리지 않도록 저작된 단계가 실제로 있는지 먼저
+    확인한다 — live가 조용히 0으로 돌아가면 이 assert가 먼저 잡는다.
     """
     cover = [s for steps in spec.entity_plans.values() for s in steps
              if s.task_kind == "move_cover"]
@@ -296,7 +298,7 @@ def test_cover_move_substitutes_the_chosen_point_not_the_threat():
     'move task가 있다'만 확인하면 X Y Z에 위협의 좌표가 들어가도 통과한다
     (Task 5 브리프의 CRITICAL 경고 — ctx.ref_kind(threat)를 따라 _fill로
     가면 X Y Z에 ctx.coord_of(threat)가 들어가 위협 쪽으로 이동해버린다).
-    실제 spec에도 저작된 move_cover가 있지만(52/77,
+    실제 spec에도 저작된 move_cover가 있지만(74/77,
     test_being_hit_produces_a_take_cover_move), 여기서는 choose_cover_location
     이 분명히 다른 좌표를 고르는 스텁 ctx로 build_entity_plan을 직접 불러
     확인한다 — 실제 시나리오의 배치·설정에 좌우되지 않는 결정적 회귀
@@ -356,18 +358,16 @@ def test_cover_move_substitutes_the_chosen_point_not_the_threat():
     assert f"{tx:.6f} {ty:.6f} {tz:.6f}" not in live[0].pln
 
 
-def test_shared_cover_point_spreads_entities_in_bounded_rings():
-    """이격은 지점 선택 필터가 아니라 배치 규칙이다(2026-08-27, 세 번째 정정).
+def test_shared_cover_point_lets_every_object_share_the_same_destination():
+    """설계 §8 개정(2026-08-27, 사용자 결정): 목적지는 골든 지점 그 자체고,
+    지점 안에서 여러 객체가 어디에 서는지는 VR-Forces가 정한다.
 
-    같은 golden 지점을 고른 여러 객체는 반원형 고리(리뷰 라운드 1, 네 번째
-    정정)로 벌어진다 — 군집 크기 n에 비례(직선 벌림, 폐기됨)가 아니라
-    sqrt(n)에 비례해 자란다. 여섯 명을 같은 지점에 배정해 고리 1(용량 3)을
-    채우고 고리 2로 넘어가는 경계를 지나면서: (a) 모두 같은 ref를 받고,
-    (b) 모든 쌍의 상호 거리가 min_entity_separation_m 이상이며(인접한
-    쌍만이 아니라 전부 — 직선 벌림 시절의 '한 축 위 좌우 교대'와 달리 고리
-    위의 인접하지 않은 두 자리도 서로 이 최소 거리를 지켜야 한다), (c) 각자
-    자기 시작점보다 위협에서 더 멀고, (d) 여섯 번째의 지점 이탈 거리가 직선
-    벌림이었다면 나왔을 5*min_sep=75m보다 훨씬 작다는 것을 확인한다.
+    같은 지점을 고른 여러 객체는 전부 정확히 같은 좌표를 받는다 — 벌려
+    세우는 배치도, 이격 검사도 없다. 이전 판(반원형 고리)은 이 자리에서
+    좌표가 지점마다 갈라지는지를 검증했지만, 그 배치가 목적지를 지명
+    중심에서 15~90m 밀어내 후처리 snap(1m 이내만 지명으로 접는다)이
+    엄폐 목적지 52개 중 50개를 이름 없는 좌표 노드로 남기는 것이 실측으로
+    확인돼 폐기됐다. 이제는 여러 객체가 좌표까지 완전히 같아야 정상이다.
     """
     layout = BattlefieldLayout({"locations": {
         "LOC_COVER": {"lat": 21.0, "lon": 105.0 - 250.0 / 103_900.0,
@@ -377,7 +377,6 @@ def test_shared_cover_point_spreads_entities_in_bounded_rings():
     ctx = _Ctx(layout, IdAllocator("test"), {}, {}, [], WeaponRanges(),
               EnrichmentConfig.defaults())
     current = ground_distance(actor_coord, threat_coord)
-    min_sep = EnrichmentConfig.defaults().min_entity_separation_m
 
     picks = [ctx.choose_cover_location(f"E{i}", actor_coord, threat_coord)
             for i in range(6)]
@@ -385,32 +384,20 @@ def test_shared_cover_point_spreads_entities_in_bounded_rings():
     refs = [ref for ref, _ in picks]
     coords = [coord for _, coord in picks]
     assert len(set(refs)) == 1 and refs[0] == "LOC_COVER"
-    assert coords[0] == layout.coord("LOC_COVER"), "k=0은 지점 그 자체다"
-
-    for i in range(len(coords)):
-        for j in range(i + 1, len(coords)):
-            sep = ground_distance(coords[i], coords[j])
-            assert sep >= min_sep - 1e-3, (i, j, sep)
-
+    assert all(c == layout.coord("LOC_COVER") for c in coords), (
+        "목적지는 지점 그 자체이고 공유하는 모든 객체가 같은 좌표를 받는다")
     for coord in coords:
         assert ground_distance(coord, threat_coord) > current
 
-    worst_offset = max(ground_distance(layout.coord("LOC_COVER"), c)
-                       for c in coords)
-    assert worst_offset < 5 * min_sep, worst_offset
 
-
-def test_cover_assignments_respect_budget_bearing_and_separation_on_the_real_build():
-    """Finding 1의 재검증(리뷰 라운드 1)이 실제 시나리오에서 지켜지는지 본다.
-
-    바로 위 합성 테스트는 golden 지점 하나짜리 레이아웃이라 이동예산·전장
-    경계와는 무관하다 — 리뷰가 정확히 짚은 대로, 예전 Measurement 3도
-    이격·위협 이격 증가만 봤지 이동예산이나(직선 벌림이 375m까지 밀어냈다)
-    '어느 지점에 배정됐는가'는 보지 않았다. 여기서는 build_spec이 쓰는
-    것과 같은 real layout·registry·roster로 _Ctx를 만들어 hitBy 77건
-    전부를 실제와 같은 순서(액터 id 정렬)로 돌리고, choose_cover_location이
-    돌려주는 좌표 자체에 세 성질을 전부 건다: 이동예산 이내, 자기 위협
-    대비 이격 증가, 같은 지점에 이미 배정된 다른 목적지와 최소 이격.
+def test_cover_assignments_respect_the_move_budget_and_move_away_from_the_threat_on_the_real_build():
+    """설계 §8 개정 뒤 남은 두 제약(이동예산·위협 이격 증가)이 실제
+    시나리오에서 지켜지는지 본다 — 최소 이격은 더 이상 지점 선택에도
+    지점 안 배치에도 관여하지 않는다(2026-08-27, 사용자 결정). 여기서는
+    build_spec이 쓰는 것과 같은 real layout·registry·roster로 _Ctx를 만들어
+    hitBy 77건 전부를 실제와 같은 순서(액터 id 정렬)로 돌리고,
+    choose_cover_location이 돌려주는 좌표 자체에 두 성질을 건다: 이동예산
+    이내, 자기 위협 대비 이격 증가.
     """
     cfg = ROOT / "config"
     pm = PatternMap.load(cfg / "pattern_map.csv")
@@ -439,7 +426,6 @@ def test_cover_assignments_respect_budget_bearing_and_separation_on_the_real_bui
             if e.template == "hitBy" and e.actor and e.source_obj]
     assert hitby, "hitBy 이벤트가 하나도 없다"
 
-    by_point: dict[str, list[Coord]] = {}
     authored = 0
     for e in sorted(hitby, key=lambda x: x.actor):
         actor_coord = ctx.actor_coord(e.actor, e.time_s, e.src)
@@ -448,20 +434,15 @@ def test_cover_assignments_respect_budget_bearing_and_separation_on_the_real_bui
         if loc is None:
             continue
         authored += 1
-        ref, coord = loc
+        _ref, coord = loc
         assert ground_distance(actor_coord, coord) <= enrich.max_cover_move_m, (
             e.actor, ground_distance(actor_coord, coord))
         assert ground_distance(coord, threat_coord) > ground_distance(
             actor_coord, threat_coord), (e.actor, "not farther than start")
-        for other in by_point.get(ref, []):
-            sep = ground_distance(coord, other)
-            assert sep >= enrich.min_entity_separation_m - 1e-3, (
-                e.actor, ref, sep)
-        by_point.setdefault(ref, []).append(coord)
 
-    # 회귀 가드: 52/77이 조용히 다시 무너져 두 자릿수 밑으로 떨어지면 여기서
-    # 잡는다(이 assert가 실패해도 위 세 성질 자체는 이미 개별적으로 검증됐다).
-    assert authored >= 40, (authored, len(hitby))
+    # 회귀 가드: 링 폐기 뒤 실측 74/77이 조용히 무너지면 여기서 잡는다
+    # (이 assert가 실패해도 위 두 성질 자체는 이미 개별적으로 검증됐다).
+    assert authored >= 70, (authored, len(hitby))
 
 
 def test_assault_formation_move_lowers_to_a_plain_move(spec):
@@ -574,10 +555,10 @@ def test_find_tasks_are_lowered_to_moves_with_intent(spec):
     브리프 원안대로 intents를 live(=pln 있는) 단계에서만 모은다. 리뷰
     라운드 1 이전에는 이 범위를 전체 단계로 넓혀 뒀었다 — max_cover_move_m
     =100.0이던 시절 hitBy 77건 전부가 no_verified_position이라 저작된
-    move_cover가 하나도 없었기 때문이다. 지금은 400.0 + 반원형 고리
-    배치로 52/77이 저작되므로(test_being_hit_produces_a_take_cover_move)
-    live 범위로 되돌린다 — 그래야 move_cover 저작이 다시 0으로 회귀해도
-    이 assert가 잡는다(전체 단계로 넓혀 두면 no_verified_position 단계의
+    move_cover가 하나도 없었기 때문이다. 지금은 400.0으로 74/77이
+    저작되므로(test_being_hit_produces_a_take_cover_move) live 범위로
+    되돌린다 — 그래야 move_cover 저작이 다시 0으로 회귀해도 이 assert가
+    잡는다(전체 단계로 넓혀 두면 no_verified_position 단계의
     planned_intent만으로도 통과해 회귀를 놓친다).
     """
     live = [s for steps in spec.entity_plans.values() for s in steps if s.pln]

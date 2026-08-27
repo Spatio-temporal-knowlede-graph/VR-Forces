@@ -80,7 +80,7 @@ class PlanContext(Protocol):
 SKIP_UNSUPPORTED = "unsupported_task"     # 모델에 그 task의 컨트롤러가 없다
 SKIP_MIN_RANGE = "below_min_range"        # 간접사격 최소사거리 미달
 # find_firing_position(21/21 실패)·find_cover(다수 모델 실패)를 좌표 이동으로
-# 대체할 때 golden 지형점이 세 제약(위협과 멀어짐·경계 안·최소 이격)을 하나도
+# 대체할 때 golden 지형점이 두 제약(위협과 멀어짐·경계 안)을 하나도
 # 만족하지 못한 경우. 실패하는 find task로 되돌아가지 않고 이 사유로 남긴다.
 SKIP_NO_VERIFIED_POSITION = "no_verified_position"
 
@@ -412,7 +412,7 @@ def _verified_move(e: Event, entity: EntityDef, kind: str,
 
     if loc is None:
         step.issues.append(
-            "검증된 golden 위치 없음(위협과 멀어짐·경계 안·최소 이격 중 "
+            "검증된 golden 위치 없음(위협과 멀어짐·경계 안 중 "
             "하나를 만족하는 지형점이 없다) — find task로 되돌아가지 않는다")
         step.skip_reason = SKIP_NO_VERIFIED_POSITION
         step.planned_intent = intent

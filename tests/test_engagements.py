@@ -150,21 +150,20 @@ def test_no_verified_cover_point_returns_none_not_a_find_task():
                                  EnrichmentConfig.defaults()) is None
 
 
-# choose_cover_location 자체는 더 이상 최소 이격을 지점 선택 필터로 걸지
-# 않는다(2026-08-27, 세 번째 정정) — golden 지점 21개 대 hitBy 77건
-# 밀도에서 필터로 두면 지울 수만 있지 채울 수 없다는 게 두 번의 실측
-# (t=0 배치 좌표: 50/77, 이번 빌드 예약: 2/77)으로 확인됐다. 이격은 이제
-# 같은 지점을 공유하는 여러 객체의 배치 규칙이고, 그 로직은
-# _Ctx.choose_cover_location(spec.py)에 있다 — 아래
-# test_cover_point_still_leaves_the_actor_free_when_no_one_shares_it과
-# tests/test_spec.py의 배치 검증 테스트를 본다.
+# choose_cover_location은 최소 이격을 지점 선택 필터로도, 지점 안 배치
+# 규칙으로도 걸지 않는다(설계 §8 개정, 2026-08-27, 사용자 결정). golden
+# 지점 21개 대 hitBy 77건 밀도에서 필터로 두면 지울 수만 있지 채울 수
+# 없다는 게 두 번의 실측(t=0 배치 좌표: 50/77, 이번 빌드 예약: 2/77)으로
+# 확인됐고, 지점 안에서 벌려 세우는 배치도 목적지를 지명 중심에서
+# 15~90m 밀어내 후처리 snap이 대부분을 이름 없는 좌표 노드로 남긴다
+# (실측: 52개 중 50개). 여러 객체가 같은 golden 지점으로 향하는 것은
+# 그대로 허용한다 — 지점 안에서 어디에 서는지는 VR-Forces가 정한다.
 def test_cover_point_still_leaves_the_actor_free_when_no_one_shares_it():
     """이격이 지점 선택 필터가 아님을 회귀로 잡는다.
 
-    이전 두 버전 중 하나로 되돌아가면(occupied가 다시 필터로 걸리면) 이
-    테스트 자체는 여전히 통과하지만(occupied 인자가 아예 없으므로), 시그니처
-    회귀는 여기서 걸린다 — choose_cover_location이 occupied를 다시 받으면
-    TypeError가 난다.
+    occupied가 다시 필터로 걸리면 이 테스트 자체는 여전히 통과하지만
+    (occupied 인자가 아예 없으므로), 시그니처 회귀는 여기서 걸린다 —
+    choose_cover_location이 occupied를 다시 받으면 TypeError가 난다.
     """
     layout = _layout_with_single_valid_point()
     cfg = EnrichmentConfig.defaults()

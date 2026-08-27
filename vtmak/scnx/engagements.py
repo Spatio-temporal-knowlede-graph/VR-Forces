@@ -55,10 +55,6 @@ class EnrichmentConfig:
     default_task_duration_s: float = 2.0
     min_expected_suppress_spo: int = 70
     max_cover_move_m: float = 400.0
-    # 지점 선택 필터가 아니다(2026-08-27 세 번째 정정) — 같은 golden 지점을
-    # 고른 여러 객체를 위협 방위에 수직으로 벌려 세우는 배치 간격이다.
-    # _Ctx.choose_cover_location(spec.py)이 이 값을 쓴다.
-    min_entity_separation_m: float = 15.0
 
     @classmethod
     def load(cls, path) -> "EnrichmentConfig":
@@ -222,13 +218,17 @@ def choose_cover_location(layout: BattlefieldLayout, actor: Coord,
     안일 것. 못 지키면 이동 task를 만들지 않고 None을 돌려준다 — 실패하는
     find_cover로 되돌아가지 않는다.
 
-    '다른 객체와 최소 이격'(설계 §8)은 여기서 지점을 거르는 필터가 아니다
-    (2026-08-27, 세 번째 정정). golden 지점 21개 대 hitBy 77건 밀도에서
-    필터로 두면 항상 손해만 본다 — t=0 배치 좌표로 재면 50/77, 이번 빌드에서
-    고른 점만 예약해도 같은 위치에 몰린 부대가 첫 사상자에게 유일한 후보를
-    뺏겨 2/77까지 떨어진다(둘 다 실측). 이격은 이제 지점을 공유하는 여러
-    객체를 배치하는 규칙이다 — 호출부(_Ctx.choose_cover_location)가 같은
-    ref를 고른 객체들을 위협→지점 방위에 수직으로 벌려 세운다.
+    '다른 객체와 최소 이격'은 지점 선택 조건으로 걸지 않는다(설계 §8
+    개정, 2026-08-27, 사용자 결정). golden 지점 21개 대 hitBy 77건
+    밀도에서 필터로 두면 항상 손해만 본다 — t=0 배치 좌표로 재면 50/77,
+    이번 빌드에서 고른 점만 예약해도 같은 위치에 몰린 부대가 첫 사상자에게
+    유일한 후보를 뺏겨 2/77까지 떨어진다(둘 다 실측). 지점 안에서 객체를
+    벌려 세우는 배치로 대신해 봐도 목적지가 지명 중심에서 15~90m
+    벗어나면 후처리 snap(1m 이내만 지명으로 접는다)이 대부분을 이름 없는
+    좌표 노드로 남긴다(실측: 엄폐 목적지 52개 중 50개) — 그래서 그 배치
+    로직 자체를 없앴다. 지점 안에서 객체가 어디에 서는지는 VR-Forces가
+    정하므로, 여러 객체가 같은 golden 지점으로 향하는 것을 그대로
+    허용한다.
     """
     current = ground_distance(actor, threat)
     choices = []

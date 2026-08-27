@@ -16,6 +16,5 @@
   "direct_fire_duration_s": 5.0,
   "default_task_duration_s": 2.0,
   "min_expected_suppress_spo": 70,
-  "max_cover_move_m": 400.0,
-  "min_entity_separation_m": 15.0
+  "max_cover_move_m": 400.0
 }
