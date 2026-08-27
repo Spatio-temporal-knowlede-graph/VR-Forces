@@ -18,13 +18,14 @@ from ..registry import EntityDef
 from ..roster import unit_of
 from .catalog import DisCatalog, TaskCatalog, TaskKinds
 from .engagements import (ActorClock, EngagementSlot, EnrichmentConfig,
+                          SlotRejection, build_enrichment_slots,
                           build_source_slots,
                           choose_cover_location as _choose_cover_location,
                           choose_firing_location as _choose_firing_location)
 from .fixed import FixedObject
 from .ids import IdAllocator
 from .placement import PlacementRules, build_headings, build_positions
-from .plan import PlanStep, balanced, build_entity_plan
+from .plan import PlanStep, balanced, build_engagement_steps, build_entity_plan
 
 
 @dataclass
@@ -63,9 +64,14 @@ class ScnxSpec:
     fixed_objects: list[FixedObject] = field(default_factory=list)
     # 고정 객체에 붙는 Plan 블록(Set·Task). marking → PLN 문자열들.
     fixed_plans: dict[str, list[str]] = field(default_factory=dict)
+    # 원문 77건(origin="source") + 결정적으로 고른 신규 교전(origin=
+    # "enrichment"). G4(vtmak/scnx/gates.py)와 감사 산출물
+    # (engagements.slot_audit_rows)이 이 필드 하나를 공유해서 읽는다.
+    engagement_slots: list[EngagementSlot] = field(default_factory=list)
+    # 신규 교전 후보 중 채택되지 못한 것들의 사유. build_enrichment_slots가
+    # 채운다 — enrichment_config가 없거나 비활성이면 비어 있다.
+    engagement_rejections: list[SlotRejection] = field(default_factory=list)
 
-
-SUPPRESSED_STATES = {"제압"}
 
 # 고정 객체 플랜에 허용하는 Plan 요소. Set과 Task 둘 다 통과시킨다 — UAV는
 # 순찰 비행(move-along)을 해야 관측 방위가 바뀌어 지형 차폐가 풀린다
@@ -120,27 +126,6 @@ def build_fixed_plans(fixed: list[FixedObject],
         if blocks:
             plans[f.marking] = blocks
     return plans
-
-
-def suppression_events(events: list[Event]) -> set[str]:
-    """표적이 제압 상태가 된 직접사격 event_id.
-
-    원문은 사격 → 피격 → 상태전환을 세 문장으로 나눠 쓴다. 셋을 이어붙여
-    '이 사격은 제압사격이었다'를 판정한다. 그런 사격은 fire-at-target 대신
-    provide_suppressive_fire_loc으로 저작한다(yewon_test.pln에서 수확).
-    """
-    became: dict[str, int] = {}      # 객체 → 제압된 시각
-    for e in events:
-        if e.template == "stateChange" and e.state_to in SUPPRESSED_STATES:
-            became.setdefault(e.actor, e.time_s)
-    out: set[str] = set()
-    for e in events:
-        if e.template != "directFireAt" or not e.target:
-            continue
-        t = became.get(e.target)
-        if t is not None and t >= e.time_s:
-            out.add(e.event_id)
-    return out
 
 
 class _Ctx:
@@ -355,22 +340,50 @@ class _Ctx:
         return self._layout.offset_coord(ref, east, north)
 
 
+# 교전 슬롯 블록 내부 순서(이동→대기→직접사격→제압사격, 설계 §5). 슬롯이
+# 아닌 단계는 -1 하나로 묶어 time_s·event_id만으로 갈리게 한다 — 그래야
+# 슬롯 블록 넷은 phase로, 나머지는 원래 순서(시각·event_id)로 유지된다.
+_SLOT_PHASE_ORDER = {"move": 0, "wait": 1, "fire_direct": 2, "suppress": 3}
+
+
+def _slot_phase(step: PlanStep) -> int:
+    if not step.slot_id:
+        return -1
+    return _SLOT_PHASE_ORDER.get(step.task_kind, 0)
+
+
 def build_spec(events: list[Event], registry: dict[str, EntityDef],
                layout: BattlefieldLayout, pattern_map: PatternMap,
                catalog: TaskCatalog, kinds: TaskKinds,
                dis: DisCatalog, ranges: WeaponRanges,
                scenario_id: str, seed: str = "",
                fixed: list[FixedObject] | None = None,
-               placement: PlacementRules | None = None) -> ScnxSpec:
+               placement: PlacementRules | None = None,
+               enrichment_config: EnrichmentConfig | None = None) -> ScnxSpec:
+    """이벤트·사전·레이아웃 → 확정 스펙. 순서는 비순환이어야 한다(Task 6):
+
+    1. 배치·컨텍스트·엔티티 스펙·source 슬롯·slots_by_event.
+    2. 원문 행위자 계획(source 슬롯은 이동·대기·직접·제압 네 단계로 내려간다).
+    3. 살아 있는 PlanStep에서 task_counts·last_task_times를 센다.
+    4. 객체별 ActorClock(2단계에서 이미 굴린 것)으로 blocked_shooters를 모은다.
+    5. enrichment_config가 있고 활성화됐으면 build_enrichment_slots를 부른다.
+    6. 신규 슬롯을 사수의 계획 끝에 붙인다. 표적 계획은 건드리지 않는다.
+    7. 사수별 계획을 (time_s, slot phase, event_id)로 재정렬한다.
+
+    enrichment_config가 None이면 5~7단계를 건너뛴다 — 원문 77건의 슬롯
+    lowering(1~2단계)과 엄폐·사격위치 대체(_Ctx)는 '보강'이 아니라 기존
+    계약이라 always on이다. 그래서 None일 때도 _Ctx·ActorClock·source
+    슬롯에는 EnrichmentConfig.defaults()를 대체값으로 쓴다 — 파일을 다시
+    읽는 게 아니라(그러면 로딩 지점이 둘로 갈린다) 코드에 둔 기본값이다.
+    설정 파일을 읽는 유일한 자리는 scripts/04_compile_scnx.py다.
+    """
     ids = IdAllocator(seed or scenario_id)
     taskable = {oid: d for oid, d in sorted(registry.items()) if d.taskable}
     entity_uuids = {oid: ids.alloc("entity", oid) for oid in taskable}
 
     # move_firing_position·move_cover(Task 5)가 컴파일 시점에 골든 지점을
-    # 검증하려면 _Ctx가 사거리표와 엄폐 설정을 미리 쥐고 있어야 한다 —
-    # 그래서 슬롯 빌드보다 앞으로 당겨 로드한다.
-    enrichment_config = EnrichmentConfig.load(
-        CONFIG / "engagement_enrichment.json")
+    # 검증하려면 _Ctx가 사거리표와 엄폐 설정을 미리 쥐고 있어야 한다.
+    base_config = enrichment_config or EnrichmentConfig.defaults()
 
     # 배치와 방위. 좌표는 대형 배치기가, 방위는 첫 이동 목적지가 정한다.
     # 태스크가 참조하는 좌표(_Ctx)도 이 배치를 봐야 하므로 먼저 만든다.
@@ -379,7 +392,7 @@ def build_spec(events: list[Event], registry: dict[str, EntityDef],
     headings = build_headings(taskable, events, layout)
     coords = build_positions(taskable, layout, rules, headings)
     ctx = _Ctx(layout, ids, registry, entity_uuids, events, ranges,
-              enrichment_config, coords)
+              base_config, coords)
 
     spec = ScnxSpec(scenario_id=scenario_id, terrain=layout.terrain,
                     fixed_objects=list(fixed or []))
@@ -405,26 +418,87 @@ def build_spec(events: list[Event], registry: dict[str, EntityDef],
     fire_distance = {g.event_id: g.distance_m
                      for g in engagement_pairs(events, registry, layout)}
 
-    # Task 4: 원문 directFireAt 77건을 결정적 EngagementSlot으로 바꿔
-    # 이동·대기·직접사격·제압사격 네 단계로 내린다(설계 §5). suppression_events
-    # 기반의 양자택일 대체는 더 이상 쓰지 않는다 — 그 함수는 Task 6이
-    # 정리할 다른 계약(spec.py 자체 정리)을 위해 남겨 둔다.
-    source_slots = build_source_slots(events, registry, layout,
-                                      enrichment_config)
+    # 1단계: 원문 directFireAt 77건을 결정적 EngagementSlot으로 바꾼다
+    # (설계 §5). spec.engagement_slots는 여기서 source 슬롯으로 먼저 채운다
+    # — 5단계가 건너뛰어도(enrichment_config=None) 원문 77건은 항상 있다.
+    source_slots = build_source_slots(events, registry, layout, base_config)
     slots_by_event: dict[str, EngagementSlot] = {}
     for slot in source_slots:
         for eid in slot.source_event_ids:
             slots_by_event[eid] = slot
+    spec.engagement_slots = list(source_slots)
 
+    # 2단계: 원문 행위자 계획. source 슬롯은 build_entity_plan 안에서 Task 4의
+    # 네 단계로 내려간다. 사수별 ActorClock을 clocks에 남겨 둔다 — 4단계의
+    # blocked_shooters 판정과 6단계의 신규 슬롯 이어붙이기가 같은 시계를
+    # 이어 쓴다(다시 굴리면 중복 계산이고, 새로 만들면 두 시계가 어긋난다).
     by_actor: dict[str, list[Event]] = {oid: [] for oid in taskable}
     for e in events:
         if e.actor in by_actor:
             by_actor[e.actor].append(e)
+    clocks: dict[str, ActorClock] = {}
     for oid, d in taskable.items():
-        clock = ActorClock(0, enrichment_config)
+        clock = ActorClock(0, base_config)
         spec.entity_plans[oid] = build_entity_plan(
             by_actor[oid], d, pattern_map, catalog, kinds, ranges, ctx,
-            fire_distance, slots_by_event, clock, enrichment_config)
+            fire_distance, slots_by_event, clock, base_config)
+        clocks[oid] = clock
+
+    # 3단계: 살아 있는(=.pln이 있는) PlanStep에서 표적 우선순위에 쓸
+    # task_counts·last_task_times를 센다.
+    task_counts: dict[str, int] = {}
+    last_task_times: dict[str, int] = {}
+    for oid, steps in spec.entity_plans.items():
+        live = [s for s in steps if s.pln]
+        if live:
+            task_counts[oid] = len(live)
+            last_task_times[oid] = max(s.time_s for s in live)
+
+    # 4단계: blocked_shooters. 후보는 BLUE taskable 객체다 — 이 보강은
+    # 원문에서 대응이 적은 RED 표적을 겨눈다(설계 §6.3, Task 2
+    # full_inputs와 같은 관례). noTask가 선언됐거나(원문이 명시적으로
+    # 금지) 원문 큐 전체가 유한하게 끝나지 않으면(clock.bounded=False,
+    # 2단계에서 이미 확정) 그 뒤에 새 슬롯을 이어붙일 수 없다.
+    notask_actors = {e.actor for e in events
+                     if e.template == "noTask" and e.actor}
+    blue_shooter_ids = sorted(oid for oid, d in taskable.items()
+                              if d.faction == "BLUE")
+    blocked_shooters: dict[str, str] = {}
+    for oid in blue_shooter_ids:
+        if oid in notask_actors:
+            blocked_shooters[oid] = "shooter_no_task"
+        elif not clocks[oid].bounded:
+            blocked_shooters[oid] = "shooter_unbounded_predecessor"
+
+    # 5~7단계: 신규 교전. enrichment_config가 없거나 비활성화면 건너뛴다 —
+    # source 슬롯 77건과 그 lowering은 이미 끝났으므로 영향받지 않는다.
+    if enrichment_config is not None and enrichment_config.enabled:
+        result = build_enrichment_slots(
+            events, registry, layout, ranges, enrichment_config,
+            task_counts, last_task_times, blue_shooter_ids,
+            blocked_shooters, source_slots)
+        spec.engagement_rejections = list(result.rejected)
+        spec.engagement_slots.extend(result.slots)
+
+        # 6단계: 각 보강 슬롯을 사수의 계획 끝에 붙인다. 표적 계획은
+        # 절대 건드리지 않는다 — 슬롯은 사수의 행동이지 표적의 사건이
+        # 아니다.
+        for slot in sorted(result.slots,
+                           key=lambda s: (s.shooter_id, s.scheduled_time_s,
+                                         s.slot_id)):
+            shooter_entity = taskable[slot.shooter_id]
+            new_steps = build_engagement_steps(
+                slot, shooter_entity, catalog, kinds, ranges, ctx,
+                clocks[slot.shooter_id], enrichment_config)
+            spec.entity_plans[slot.shooter_id].extend(new_steps)
+
+        # 7단계: 새 슬롯이 끝에 붙었으니 시각순으로 되정렬한다. 한 슬롯의
+        # 네 합성 이벤트는 전부 slot.scheduled_time_s를 공유해 time_s만으로는
+        # 안 갈리므로 _slot_phase로 내부 순서를 못 박는다.
+        for oid in {s.shooter_id for s in result.slots}:
+            spec.entity_plans[oid] = sorted(
+                spec.entity_plans[oid],
+                key=lambda s: (s.time_s, _slot_phase(s), s.event_id))
 
     # 통제점(= VR-Forces 전술 그래픽)은 태스크가 실제로 참조할 때만 만든다.
     # 예전에는 배치 지명까지 전부 찍었는데, 그건 지도 표시용일 뿐 태스크가

@@ -20,6 +20,7 @@ import re
 from ..gates import REPORT, Violation
 from ..registry import UNCLASSIFIED
 from .catalog import DisCatalog
+from .engagements import EnrichmentConfig, expected_suppress_spo
 from .golden import Golden
 from .plan import balanced
 from .spec import ScnxSpec
@@ -128,4 +129,84 @@ def check_g3(spec: ScnxSpec, golden: Golden,
                 if r not in uuids:
                     out.append(Violation("G3", "C3.7",
                                          f"참조 미해결: {oid} {s.event_id} → {r}"))
+    return out
+
+
+# _fill(plan.py)·with_wait_seconds가 채우지 못하고 살아 있는 PLN에 남길 수
+# 있는 자리표시자. 괄호 불균형은 C3.6(위)이 이미 잡으므로 여기서 다시
+# 검사하지 않는다(설계 §12).
+_PLACEHOLDERS = ("TARGET_UUID", "X Y Z", "SX SY SZ", "AZIMUTH_RAD",
+                "ELEVATION_RAD")
+
+
+def validate_interaction_plan(spec: ScnxSpec,
+                              config: EnrichmentConfig) -> list[Violation]:
+    """G4 — 교전 슬롯과 큐 도달 가능성.
+
+    G3가 '파일이 말이 되는가'라면 G4는 '이 큐가 VR-Forces에서 끝까지
+    도는가'다. 여기서 잡히는 것들은 전부 실행 로그에서만 보이던 실패였다.
+    """
+    out: list[Violation] = []
+    seen_slot_ids: set[str] = set()
+    seen_pairs: set[tuple[str, str]] = set()
+    factions = {e.object_id: e.faction for e in spec.entities}
+
+    for slot in spec.engagement_slots:
+        if slot.slot_id in seen_slot_ids:
+            out.append(Violation("G4", "C4.1", f"slot_id 중복: {slot.slot_id}"))
+        seen_slot_ids.add(slot.slot_id)
+        pair = (slot.shooter_id, slot.target_id)
+        if slot.origin == "enrichment":
+            if pair in seen_pairs:
+                out.append(Violation("G4", "C4.1", f"중복 신규 교전: {pair}"))
+            seen_pairs.add(pair)
+        if factions.get(slot.shooter_id) == factions.get(slot.target_id):
+            out.append(Violation("G4", "C4.5",
+                                 f"같은 진영 교전: {slot.slot_id} {pair}"))
+
+    source = [s for s in spec.engagement_slots if s.origin == "source"]
+    added = [s for s in spec.engagement_slots if s.origin == "enrichment"]
+    if len(source) != 77:
+        out.append(Violation("G4", "C4.6", f"원문 교전 슬롯 {len(source)}개 (77 기대)"))
+    if not (config.min_new_unique_pairs <= len(added)
+            <= config.max_new_unique_pairs):
+        out.append(Violation("G4", "C4.6", f"신규 교전 슬롯 {len(added)}개"))
+    spo = expected_suppress_spo(tuple(spec.engagement_slots))
+    if len(spo) < config.min_expected_suppress_spo:
+        out.append(Violation("G4", "C4.7",
+                             f"예상 고유 제압사격 SPO {len(spo)}개 "
+                             f"({config.min_expected_suppress_spo} 미만)"))
+
+    for oid, steps in sorted(spec.entity_plans.items()):
+        live = [s for s in steps if s.pln]
+        for i, step in enumerate(live):
+            if 'task-type "follow-entity"' in step.pln and i + 1 < len(live):
+                out.append(Violation(
+                    "G4", "C4.2",
+                    f"{oid}: 무기한 follow 뒤 후속 task "
+                    f"({step.event_id} → {live[i + 1].event_id})"))
+            if 'task-type "find_firing_position"' in step.pln or \
+                    'task-type "find_cover"' in step.pln:
+                out.append(Violation("G4", "C4.3",
+                                     f"{oid}: 실패 task 잔존 {step.event_id}"))
+            # C4.8은 slot_id가 붙은 대기 단계만 본다 — stopAt/stayAt 원문
+            # 대기는 task_kind=wait이지만 slot_id가 없고, 수확된 기본
+            # 60초를 그대로 쓰는 게 정상이다(전역 제약은 '유한하고 양수'만
+            # 요구하고 60.0은 그 조건을 만족한다). slot 대기만 실제로
+            # with_wait_seconds가 치환해야 하는 합성 값이라, 60.000000이
+            # 남아 있으면 그 치환이 빠졌다는 결함 신호다.
+            if step.slot_id and 'task-type "wait-duration"' in step.pln and \
+                    "(seconds-to-wait 60.000000)" in step.pln:
+                out.append(Violation("G4", "C4.8",
+                                     f"{oid}: 대기 초 미치환 {step.event_id}"))
+            if any(tok in step.pln for tok in _PLACEHOLDERS):
+                out.append(Violation("G4", "C4.9",
+                                     f"{oid}: 자리표시자 미치환 {step.event_id}"))
+        for slot_id in sorted({s.slot_id for s in live if s.slot_id}):
+            block = [s for s in live if s.slot_id == slot_id]
+            kinds = [s.task_kind for s in block]
+            if kinds[-2:] != ["fire_direct", "suppress"]:
+                out.append(Violation("G4", "C4.4",
+                                     f"{oid} {slot_id}: 사격 두 단계가 인접하지 "
+                                     f"않는다 {kinds}"))
     return out

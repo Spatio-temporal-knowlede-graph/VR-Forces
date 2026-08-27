@@ -200,6 +200,7 @@ def build_rows(spec: ScnxSpec, contents: ScnxContents, kinds: TaskKinds,
     by_uuid = {o.uuid: o for o in contents.objects}
     ent_name = {e.uuid: e.object_id for e in spec.entities}
     ctl_name = {c.uuid: c.ref_id for c in spec.control_objects}
+    slots_by_id = {s.slot_id: s for s in spec.engagement_slots}
 
     missing = [e.object_id for e in spec.entities if e.uuid not in by_uuid]
     if missing:
@@ -229,16 +230,35 @@ def build_rows(spec: ScnxSpec, contents: ScnxContents, kinds: TaskKinds,
             t = actual[i] if i < len(actual) else None
             ref_id, ref_kind = _resolve_ref(t, ent_name, ctl_name)
             if not ref_id:
-                # move_firing_position(Task 5)의 참조_필드는 next_fire_target
-                # 인데, 이건 Event의 실제 속성이 아니라 plan._resolve_ref가
-                # 뒤따르는 사격 이벤트를 스캔해 계산하는 값이다 — _event_ref는
-                # 이 계산을 다시 하지 않으므로 늘 빈 문자열을 돌려준다. 같은
-                # 값이 이미 PlanStep.intent_object(위협 객체 id)에 남아 있으니
-                # 여기서 그걸로 되살린다.
+                # 두 가지 서로 다른 결손을 여기서 복구한다(둘 다 독립적으로
+                # 필요하다 — Task 6 리뷰 메모).
+                #
+                # 1) move_firing_position(Task 5)의 참조_필드는
+                # next_fire_target인데, 이건 Event의 실제 속성이 아니라
+                # plan._resolve_ref가 뒤따르는 사격 이벤트를 스캔해 계산하는
+                # 값이다 — _event_ref는 이 계산을 다시 하지 않으므로 늘 빈
+                # 문자열을 돌려준다. 같은 값이 이미
+                # PlanStep.intent_object(위협 객체 id)에 남아 있으니 그걸로
+                # 되살린다.
+                #
+                # 2) 교전 슬롯 lowering(build_engagement_steps, Task 4)이
+                # 만드는 네 단계는 event_id 자리에 원문 event_id 대신
+                # slot.slot_id를 쓴다 — by_event에 그 키가 없어 _event_ref도
+                # 못 찾는다. 특히 제압사격은 좌표 task라 .pln에 uuid가
+                # 없으므로 _resolve_ref도 실패한다(Task 6, 이 회귀를 고친다
+                # — 예전 배타 저작 시절엔 실제 event를 달고 있어
+                # _event_ref가 e.target을 복구했다). slot_id가 있으면
+                # 슬롯 자체에서 직접 참조를 푼다.
                 ref_id = (_event_ref(by_event.get(step.event_id),
                                      step.task_kind, kinds)
                          or step.intent_object)
                 ref_kind = "COORD" if ref_id else ""
+                slot = slots_by_id.get(step.slot_id) if step.slot_id else None
+                if slot is not None and not ref_id:
+                    ref_id = (slot.target_ref if step.task_kind == "suppress"
+                             else slot.target_id)
+                    ref_kind = "COORD" if step.task_kind == "suppress" \
+                        else "ENTITY"
             rows.append(TaskRow(
                 object_id=e.object_id, name=e.name, faction=e.faction,
                 entity_class=e.entity_class, type_group=e.type_group,

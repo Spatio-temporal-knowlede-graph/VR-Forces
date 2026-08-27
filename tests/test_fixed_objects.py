@@ -15,6 +15,7 @@ from vtmak.ranges import WeaponRanges
 from vtmak.registry import ClassMap, build_registry
 from vtmak.roster import RosterPlan, filter_events, select_roster
 from vtmak.scnx.catalog import DisCatalog, TaskCatalog, TaskKinds
+from vtmak.scnx.engagements import EnrichmentConfig
 from vtmak.scnx.fixed import load_fixed
 from vtmak.scnx.gates import check_g3
 from vtmak.scnx.golden import Golden, _parse_objects
@@ -34,7 +35,13 @@ def fixed():
     return load_fixed(CFG / "fixed_objects.json", ROOT, LAYOUT)
 
 
-def _spec(scenario: Path, fixed, target_entities: int | None = None):
+def _build_inputs(scenario: Path, fixed, target_entities: int | None = None
+                  ) -> dict:
+    """build_spec에 넘길 인자를 dict로 돌려준다.
+
+    _spec()과 full_build_inputs 픽스처가 이 하나로 갈라지지 않게 한다
+    (test_spec.py의 full_build_inputs와 같은 관례, Task 6).
+    """
     pm = PatternMap.load(CFG / "pattern_map.csv")
     res = parse_scenario(scenario.read_text(encoding="utf-8"), pm)
     lay = BattlefieldLayout.load(CFG / "battlefield_layout.json")
@@ -49,16 +56,30 @@ def _spec(scenario: Path, fixed, target_entities: int | None = None):
     events = filter_events(res.events, keep)
     reg = {o: d for o, d in reg.items() if o in keep}
     dis = DisCatalog.load(CFG / "dis_catalog.csv")
-    return build_spec(events, reg, lay, pm,
-                      TaskCatalog.load(CFG / "task_catalog.csv"),
-                      TaskKinds.load(CFG / "task_kinds.csv"), dis,
-                      WeaponRanges.load(CFG / "weapon_ranges.csv"),
-                      "battle", fixed=fixed), dis
+    return dict(events=events, registry=reg, layout=lay, pattern_map=pm,
+               catalog=TaskCatalog.load(CFG / "task_catalog.csv"),
+               kinds=TaskKinds.load(CFG / "task_kinds.csv"), dis=dis,
+               ranges=WeaponRanges.load(CFG / "weapon_ranges.csv"),
+               scenario_id="battle", fixed=fixed)
+
+
+def _spec(scenario: Path, fixed, target_entities: int | None = None):
+    inputs = _build_inputs(scenario, fixed, target_entities)
+    return build_spec(**inputs), inputs["dis"]
 
 
 @pytest.fixture(scope="module")
 def built(fixed):
     return _spec(SCENARIO, fixed)
+
+
+@pytest.fixture(scope="module")
+def full_build_inputs(fixed):
+    """test_enrichment_does_not_change_fixed_uav_plans가 켬/끔을 각각
+    build_spec에 넘기는 데 쓴다. 명부는 줄이지 않는다(전체 규모) — 축소한
+    명부는 신규 교전 후보 20개 바닥과 부딪힐 수 있다(engagements.py
+    build_enrichment_slots의 ValueError)."""
+    return _build_inputs(SCENARIO, fixed)
 
 
 @pytest.fixture(scope="module")
@@ -375,3 +396,18 @@ def test_fixed_objects_are_identical_at_every_scale(n, fixed, built):
                 s.fixed_plans)
 
     assert shape(spec) == shape(base)
+
+
+def test_enrichment_does_not_change_fixed_uav_plans(full_build_inputs):
+    """신규 교전 보강은 UAV 순찰 배치에 아무 영향이 없다.
+
+    UAV·순찰로는 build_spec이 fixed_objects/fixed_plans를 통해 그대로
+    복제하는 고정 객체다(spec.py FIXED_PLAN_ELEMENTS 규칙, load_fixed) —
+    교전 슬롯 lowering은 entity_plans(원문 타스크블 객체)만 건드리므로
+    enrichment_config를 켜고 꺼도 이 둘은 바뀌면 안 된다.
+    """
+    off = build_spec(**full_build_inputs, enrichment_config=None)
+    on = build_spec(**full_build_inputs,
+                    enrichment_config=EnrichmentConfig.defaults())
+    assert on.fixed_objects == off.fixed_objects
+    assert on.fixed_plans == off.fixed_plans

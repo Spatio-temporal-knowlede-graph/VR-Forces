@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from vtmak.geometry import BattlefieldLayout
+from vtmak.geometry import BattlefieldLayout, Coord
 from vtmak.paths import SCENARIO
 from vtmak.parser import PatternMap, parse_scenario
 from vtmak.ranges import WeaponRanges
@@ -10,9 +10,11 @@ from vtmak.registry import ClassMap, build_registry
 from vtmak.roster import RosterPlan, filter_events, select_roster
 from vtmak.scnx.audit import build_rows, hhmmss, parse_oob, parse_pln, read_scnx
 from vtmak.scnx.catalog import DisCatalog, TaskCatalog, TaskKinds
+from vtmak.scnx.engagements import EngagementSlot, EnrichmentConfig
+from vtmak.scnx.gates import validate_interaction_plan
 from vtmak.scnx.pack import ensure_golden
 from vtmak.scnx.plan import PlanStep
-from vtmak.scnx.spec import build_spec
+from vtmak.scnx.spec import EntitySpec, ScnxSpec, build_spec
 from vtmak.scnx.writer import get_writer
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -157,21 +159,19 @@ def test_references_resolve_to_readable_names(built):
     (`기반kind:행동`, 예: `move_slow:속도 지정`)도 예외다 — 참조는 바로 앞뒤의
     본 태스크 줄이 이미 보여준다.
 
-    suppress도 예외다 — build_engagement_steps(Task 4)가 만드는 제압사격은
-    합성 슬롯 단계라 event_id가 원문 이벤트가 아니라 slot_id다(SRC-*).
-    `_event_ref`는 `events`의 실제 event_id로만 찾으므로 이 단계에서는
-    ref_id를 못 되살린다. 슬롯 자체의 참조(shooter/target/target_ref)는
-    build/engagements/audit.csv(Task 6의 slot_audit_rows)가 별도로 남긴다.
-
     take_cover는 Task 5(2026-08-27)에서 move_cover로 바뀌었다 — find_cover
     (컨트롤러 비활성 실측)를 좌표 이동으로 대체한다. max_cover_move_m을
     400.0으로 올리고 이격을 지점 공유 배치 규칙으로 바꾼 뒤(리뷰 라운드 1)
     hitBy 77건 중 52건이 저작된다 — 실제로 저작되는 move_cover로 확인한다.
+
+    suppress를 더 이상 예외로 두지 않는다(Task 6) — build_rows가 이제
+    step.slot_id로 슬롯을 직접 찾아 target_ref(제압사격의 좌표 목표)를
+    되살린다. 예외를 남겨 두면 이 수리가 실제로 됐는지 아무도 모른다.
     """
     spec, contents, events, kinds = built
     tasks, _, _ = build_rows(spec, contents, kinds, events)
     live = [t for t in tasks
-            if t.in_scnx and t.task_kind not in ("wait", "suppress")
+            if t.in_scnx and t.task_kind != "wait"
             and ":" not in t.task_kind]
     assert live and all(t.ref_id for t in live)
     moves = [t for t in live if t.task_kind == "move"]
@@ -180,6 +180,11 @@ def test_references_resolve_to_readable_names(built):
     assert cover, "move_cover 중 저작된 것이 하나도 없다"
     assert all(t.ref_kind == "COORD" for t in cover), (
         "좌표 이동은 통제점·엔티티 uuid가 아니라 intent_object로 참조를 남긴다")
+    # 제압사격도 이제 슬롯에서 참조를 되살린다(Task 6 리페어) — 좌표
+    # task라 .pln에 uuid가 없으므로 ref_kind는 COORD여야 한다.
+    suppress = [t for t in live if t.task_kind == "suppress"]
+    assert len(suppress) == 77, len(suppress)
+    assert all(t.ref_kind == "COORD" for t in suppress)
 
 
 def test_coordinate_tasks_need_the_events_to_name_their_target(built):
@@ -187,3 +192,72 @@ def test_coordinate_tasks_need_the_events_to_name_their_target(built):
     spec, contents, _, kinds = built
     tasks, _, _ = build_rows(spec, contents, kinds)
     assert any(t.in_scnx and not t.ref_id for t in tasks)
+
+
+# ---------------------------------------------------------------------------
+# G4(validate_interaction_plan) — 합성 spec으로 각 차단 위반을 개별 재현한다.
+# 전체 파이프라인을 돌리지 않는다. 필요한 필드만 채운 ScnxSpec을 손으로
+# 만든다(Task 6 브리프).
+# ---------------------------------------------------------------------------
+
+def _slot(slot_id, shooter="FR-A", target="EN-B", origin="enrichment",
+         shooter_faction="BLUE", target_faction="RED"):
+    """EngagementSlot 하나와 그 두 진영을 함께 돌려준다."""
+    slot = EngagementSlot(slot_id, origin, (), 100, shooter, target,
+                          Coord(21.0, 105.0, 0.0), Coord(21.001, 105.0, 0.0),
+                          "LOC_B", "", None, 111.0, 0, 1, 5, 10, 10, "")
+    return slot, {shooter: shooter_faction, target: target_faction}
+
+
+def _follow_step(oid, event_id):
+    return PlanStep(event_id, 0, "moveTo", "follow", "대형 추종 이동",
+                    '(Task (task-type "follow-entity") (offset 0 0 0) )')
+
+
+def _fire_step(oid, event_id, slot_id="SRC-E2"):
+    step = PlanStep(event_id, 10, "directFireAt", "fire_direct",
+                    "대상 직접사격",
+                    '(Task (task-type "fire-at-target") '
+                    '(max-rounds-to-fire 1))')
+    step.slot_id = slot_id
+    return step
+
+
+def _synthetic_spec(steps=(), slots=()):
+    """steps는 객체 O1의 계획, slots는 (slot, factions) 쌍의 목록."""
+    spec = ScnxSpec(scenario_id="t", terrain="t")
+    if steps:
+        spec.entity_plans["O1"] = list(steps)
+    factions = {}
+    for slot, f in slots:
+        spec.engagement_slots.append(slot)
+        factions.update(f)
+    spec.entities = [EntitySpec(object_id=o, name=o, uuid=o, entity_class="c",
+                                type_group="g", faction=fac, dis=None,
+                                coord=Coord(21.0, 105.0, 0.0), heading=0.0,
+                                initial_state="")
+                     for o, fac in sorted(factions.items())]
+    return spec
+
+
+def test_follow_before_fire_is_blocked():
+    spec = _synthetic_spec(steps=[_follow_step("O1", "E1"),
+                                  _fire_step("O1", "E2")])
+    v = validate_interaction_plan(spec, EnrichmentConfig.defaults())
+    assert any(x.code == "C4.2" and "O1" in x.detail and "E1" in x.detail
+               and "E2" in x.detail for x in v)
+
+
+def test_duplicate_slot_id_is_blocked():
+    spec = _synthetic_spec(slots=[_slot("ENR-000"), _slot("ENR-000")])
+    assert any(x.code == "C4.1"
+               for x in validate_interaction_plan(
+                   spec, EnrichmentConfig.defaults()))
+
+
+def test_same_faction_slot_is_blocked():
+    spec = _synthetic_spec(slots=[_slot("ENR-000", shooter_faction="RED",
+                                        target_faction="RED")])
+    assert any(x.code == "C4.5"
+               for x in validate_interaction_plan(
+                   spec, EnrichmentConfig.defaults()))

@@ -22,8 +22,10 @@ from vtmak.parser import Event, PatternMap                        # noqa: E402
 from vtmak.ranges import WeaponRanges                             # noqa: E402
 from vtmak.registry import ClassMap, build_registry               # noqa: E402
 from vtmak.scnx.catalog import DisCatalog, TaskCatalog, TaskKinds
+from vtmak.scnx.engagements import (                               # noqa: E402
+    AUDIT_COLUMNS, EnrichmentConfig, expected_suppress_spo, slot_audit_rows)
 from vtmak.scnx.fixed import load_fixed            # noqa: E402
-from vtmak.scnx.gates import check_g3                             # noqa: E402
+from vtmak.scnx.gates import check_g3, validate_interaction_plan  # noqa: E402
 from vtmak.scnx.golden import Golden                              # noqa: E402
 from vtmak.scnx.pack import ensure_golden                         # noqa: E402
 from vtmak.scnx.spec import build_spec                            # noqa: E402
@@ -65,19 +67,39 @@ def main() -> int:
         return 1
 
     fixed = load_fixed(CFG / "fixed_objects.json", ROOT, layout)
+    enrichment_config = EnrichmentConfig.load(
+        CFG / "engagement_enrichment.json")
     spec = build_spec(events, registry, layout, pmap,
                       TaskCatalog.load(CFG / "task_catalog.csv"),
                       TaskKinds.load(CFG / "task_kinds.csv"),
                       dis, ranges,
-                      scenario_id="battle", fixed=fixed)
+                      scenario_id="battle", fixed=fixed,
+                      enrichment_config=enrichment_config)
 
     golden_path = ensure_golden(args.golden)
     if _report(check_g3(spec, Golden.load(golden_path), dis)):
         print("G3 차단 — .scnx를 쓰지 않는다")
         return 1
 
+    if _report(validate_interaction_plan(spec, enrichment_config)):
+        print("G4 차단 — .scnx를 쓰지 않는다")
+        return 1
+
     OUT.mkdir(parents=True, exist_ok=True)
     out = get_writer(args.writer, str(golden_path)).write(spec, OUT)
+
+    # 교전 슬롯 산출물. G4까지 통과한 뒤에만 쓴다 — 차단된 빌드의 슬롯이
+    # 다음 단계(05)에 흘러들어가지 않게 한다.
+    engagement_dir = ROOT / "build" / "engagements"
+    engagement_dir.mkdir(parents=True, exist_ok=True)
+    (engagement_dir / "slots.jsonl").write_text(
+        "".join(json.dumps(s.to_json(), ensure_ascii=False, sort_keys=True)
+                + "\n" for s in spec.engagement_slots), encoding="utf-8")
+    with open(engagement_dir / "audit.csv", "w", encoding="utf-8",
+              newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(AUDIT_COLUMNS)
+        w.writerows(slot_audit_rows(spec))
 
     # 통제점 대조표. `.scnx`에는 안 들어가고 후처리(05)가 쓴다.
     # 시뮬레이터가 통제점을 marking으로 내보내는데 그 marking이 순번(P{k})이라
@@ -99,6 +121,10 @@ def main() -> int:
     print(f"엔티티 {len(spec.entities)} · 통제점 {len(spec.control_objects)} · "
           f"고정 객체 {len(spec.fixed_objects)} · "
           f"플랜 보유 {planned} · 태스크 {tasks}")
+    n_source = sum(1 for s in spec.engagement_slots if s.origin == "source")
+    n_added = sum(1 for s in spec.engagement_slots if s.origin == "enrichment")
+    n_spo = len(expected_suppress_spo(tuple(spec.engagement_slots)))
+    print(f"원문 교전 {n_source} · 신규 교전 {n_added} · 예상 제압 SPO {n_spo}")
     uavs = [f for f in spec.fixed_objects if not f.is_route]
     routes = [f for f in spec.fixed_objects if f.is_route]
     if uavs:

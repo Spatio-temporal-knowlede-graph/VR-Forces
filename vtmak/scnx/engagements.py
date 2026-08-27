@@ -536,3 +536,29 @@ class ActorClock:
             return None
         return max(float(self._cfg.minimum_observation_duration_s),
                    float(scheduled_time_s) - self._now)
+
+
+AUDIT_COLUMNS = ["slot_id", "origin", "scheduled_time_s", "shooter_id",
+                 "target_id", "target_ref", "firing_ref", "distance_m",
+                 "target_task_count", "status", "reason"]
+
+
+def slot_audit_rows(spec) -> list[list[str]]:
+    """채택 슬롯과 거절 후보를 한 표에 담는다. 정렬은 결정적이다.
+
+    build/engagements/audit.csv로 나간다(Task 6, scripts/04_compile_scnx.py).
+    사람이 '왜 이 신규 교전이 안 뽑혔나'를 여기서 바로 본다 —
+    build_enrichment_slots의 SlotRejection이 사유를 이미 갖고 있으므로
+    그대로 옮겨 적을 뿐, 여기서 새 판단을 하지 않는다.
+    """
+    rows = [[s.slot_id, s.origin, str(s.scheduled_time_s), s.shooter_id,
+             s.target_id, s.target_ref, s.firing_ref, f"{s.distance_m:.1f}",
+             str(s.target_task_count), "accepted", ""]
+            for s in sorted(spec.engagement_slots,
+                            key=lambda x: (x.origin, x.slot_id))]
+    rows += [["", "enrichment", "", r.shooter_id, r.target_id, "", "", "", "",
+              "rejected", r.reason]
+             for r in sorted(spec.engagement_rejections,
+                             key=lambda r: (r.reason, r.shooter_id,
+                                            r.target_id))]
+    return rows

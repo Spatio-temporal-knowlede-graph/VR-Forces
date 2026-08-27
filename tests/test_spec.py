@@ -19,7 +19,19 @@ from vtmak.scnx.spec import _Ctx, build_spec
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _build():
+def _build(inputs):
+    # Global memory #3: enrichment_config를 안 주면 spec.engagement_slots가
+    # source 77건뿐이라 이 파일의 20~30건 보강 단언이 전부 빈 집합을 본다.
+    return build_spec(**inputs, enrichment_config=EnrichmentConfig.defaults())
+
+
+@pytest.fixture(scope="module")
+def full_build_inputs():
+    """_build()가 build_spec에 넘기는 인자들을 dict로 돌려준다.
+
+    _build()와 이 fixture가 서로 다른 구성 경로를 갖지 않도록(따로 두면
+    언젠가 어긋난다) 파싱·명부 감축 로직은 여기 한 곳에만 둔다.
+    """
     cfg = ROOT / "config"
     pm = PatternMap.load(cfg / "pattern_map.csv")
     res = parse_scenario(
@@ -35,17 +47,30 @@ def _build():
                          task_ids)
     events = filter_events(res.events, keep)
     reg = {o: d for o, d in reg.items() if o in keep}
-    return build_spec(events, reg, lay, pm,
-                      TaskCatalog.load(cfg / "task_catalog.csv"),
-                      TaskKinds.load(cfg / "task_kinds.csv"),
-                      DisCatalog.load(cfg / "dis_catalog.csv"),
-                      WeaponRanges.load(cfg / "weapon_ranges.csv"),
-                      scenario_id="battle")
+    return dict(events=events, registry=reg, layout=lay, pattern_map=pm,
+               catalog=TaskCatalog.load(cfg / "task_catalog.csv"),
+               kinds=TaskKinds.load(cfg / "task_kinds.csv"),
+               dis=DisCatalog.load(cfg / "dis_catalog.csv"),
+               ranges=WeaponRanges.load(cfg / "weapon_ranges.csv"),
+               scenario_id="battle")
 
 
 @pytest.fixture(scope="module")
-def spec():
-    return _build()
+def spec(full_build_inputs):
+    return _build(full_build_inputs)
+
+
+def test_spec_contains_source_and_enrichment_slots(spec):
+    source = [s for s in spec.engagement_slots if s.origin == "source"]
+    added = [s for s in spec.engagement_slots if s.origin == "enrichment"]
+    assert len(source) == 77
+    assert 20 <= len(added) <= 30
+    assert len({(s.shooter_id, s.target_id) for s in added}) == len(added)
+
+
+def test_expected_suppressive_spo_clears_the_threshold(spec):
+    from vtmak.scnx.engagements import expected_suppress_spo
+    assert len(expected_suppress_spo(tuple(spec.engagement_slots))) >= 70
 
 
 def test_entities_exclude_static_objects(spec):
@@ -613,9 +638,14 @@ def test_no_task_family_dominates(spec):
     58%는 리뷰 지시대로 이번 라운드의 다른 변경(엄폐 뒤 방향 조준
     후행_행동 배선) *이전*, 즉 Finding 1~4를 반영한 상태에서 잰 값
     608/1089 = 55.83%에 여유를 둔 것이다. 방향 조준 배선은 이동이 아닌
-    task를 더해 오히려 비율을 낮춘다(현재 실측 608/1141 = 53.29%) — 그
+    task를 더해 오히려 비율을 낮춘다(당시 실측 608/1141 = 53.29%) — 그
     변경이 이 한도를 통과시키려고 골라진 게 아님을 한도를 먼저 고정해
     보장한다.
+
+    Task 6(2026-08-27)이 신규 교전 25건을 슬롯으로 얹은 뒤 재측정:
+    613/1221 = 50.20%. fire-at-target·provide_suppressive_fire_loc이
+    77→102로 늘고 wait-duration도 늘어(새 슬롯의 대기) move류 비중이
+    오히려 더 내려갔다 — 58% 한도를 옮길 필요가 없다.
     """
     import re
     from collections import Counter
@@ -675,6 +705,11 @@ def test_no_single_task_type_dominates(spec):
     45%로 되돌아가는 뻔한 회귀만 잡는 하한선이지 영구 목표가 아니다.
     정직한 측정은 VR-Forces 실행 뒤의 GT 수준 분포이고, Task 10의 수락
     단계가 그걸 모은다.
+
+    Task 6(2026-08-27)이 신규 교전 25건(직접·제압사격 각 25건, 대기·이동
+    포함)을 슬롯으로 얹은 뒤 재측정: 415/1221 = 33.99% — fire-at-target·
+    provide_suppressive_fire_loc이 77→102로 함께 늘어 top 비율은 오히려
+    내려갔다. 37% 한도를 옮길 필요가 없다.
     """
     import re
     from collections import Counter
@@ -764,8 +799,8 @@ def test_uuids_are_unique(spec):
     assert len(uids) == len(set(uids))
 
 
-def test_spec_is_deterministic(spec):
-    other = _build()
+def test_spec_is_deterministic(spec, full_build_inputs):
+    other = _build(full_build_inputs)
     assert [(e.object_id, e.uuid, e.coord.as_tuple()) for e in spec.entities] == \
            [(e.object_id, e.uuid, e.coord.as_tuple()) for e in other.entities]
     assert [(c.ref_id, c.uuid) for c in spec.control_objects] == \
