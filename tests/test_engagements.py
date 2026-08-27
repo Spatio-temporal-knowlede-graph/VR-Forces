@@ -6,12 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from vtmak.geometry import BattlefieldLayout
+from vtmak.geometry import BattlefieldLayout, Coord
 from vtmak.parser import Event
 from vtmak.ranges import WeaponRanges
 from vtmak.registry import EntityDef
-from vtmak.scnx.engagements import (EnrichmentConfig, build_enrichment_slots,
-                                    build_source_slots, expected_suppress_spo)
+from vtmak.scnx.engagements import (EnrichmentConfig, EngagementSlot,
+                                    build_enrichment_slots, build_source_slots,
+                                    expected_suppress_spo)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -119,7 +120,8 @@ def _enrichment_target(oid: str, loc: str, weapons=("AK-47",),
 def _build_enrichment_fixture(*, task_counts=None, target_pairs=6,
                               include_same_faction=False,
                               include_unarmed=False, blocked_shooters=None,
-                              shared_target_ref=False, last_task_times=None):
+                              shared_target_ref=False, last_task_times=None,
+                              source_slots=(), max_slots_per_target=None):
     layout = _enrichment_layout()
     ranges = _enrichment_ranges()
 
@@ -160,6 +162,9 @@ def _build_enrichment_fixture(*, task_counts=None, target_pairs=6,
     else:
         config = dataclasses.replace(EnrichmentConfig.defaults(),
                                      min_new_unique_pairs=2)
+    if max_slots_per_target is not None:
+        config = dataclasses.replace(
+            config, max_slots_per_target=max_slots_per_target)
 
     return build_enrichment_slots(
         events=[],
@@ -171,7 +176,7 @@ def _build_enrichment_fixture(*, task_counts=None, target_pairs=6,
         last_task_times=last_task_times or {},
         eligible_shooter_ids=eligible_shooters,
         blocked_shooters=blocked_shooters or {},
-        source_slots=(),
+        source_slots=source_slots,
     )
 
 
@@ -187,11 +192,15 @@ def test_enrichment_prefers_low_task_armed_targets_and_is_deterministic():
 
 
 def test_enrichment_enforces_shooter_and_target_caps():
-    result = _build_enrichment_fixture(target_pairs=6)
+    # target_pairs=7은 사수 3명 × max_slots_per_shooter(2) = 6보다 하나
+    # 많다 — 6개를 채우고 나면 남는 7번째 표적은 사수 셋 모두가 이미
+    # 상한이라 shooter_cap_reached로 거절돼야 한다(파인딩 3).
+    result = _build_enrichment_fixture(target_pairs=7)
     shooter_counts = Counter(s.shooter_id for s in result.slots)
     target_counts = Counter(s.target_id for s in result.slots)
     assert max(shooter_counts.values()) <= 2
     assert max(target_counts.values()) <= 1
+    assert "shooter_cap_reached" in {r.reason for r in result.rejected}
 
 
 def test_enrichment_rejects_same_faction_and_unarmed_targets():
@@ -221,6 +230,59 @@ def test_enrichment_never_repeats_a_suppressive_spo():
     spo = expected_suppress_spo(result.slots)
     assert len(spo) == len(result.slots)
     assert "duplicate_suppress_spo" in {r.reason for r in result.rejected}
+
+
+def test_enrichment_rejects_targets_already_engaged_by_a_source_slot():
+    # 설계 §6.2: 원문 슬롯이 표적의 마지막 task 시각 이후에 이미 그 표적을
+    # 치고 있으면(=원문이 이미 마무리 중) 더 얹지 않는다. EN-T1의 마지막
+    # task는 100초인데 원문 슬롯이 200초에 EN-T1을 친다 — 100 이후이므로
+    # target_already_engaged다.
+    source = EngagementSlot(
+        slot_id="SRC-X1", origin="source", source_event_ids=("X1",),
+        scheduled_time_s=200, shooter_id="EN-OTHER", target_id="EN-T1",
+        shooter_coord=Coord(0.0, 0.0, 0.0), target_coord=Coord(0.0, 0.0, 0.0),
+        target_ref="LOC_T1", firing_ref="", firing_coord=None,
+        distance_m=0.0, target_task_count=0, direct_fire_rounds=1,
+        suppress_rapid_duration_s=5, suppress_duration_s=10,
+        suppress_ammo_limit=10)
+    result = _build_enrichment_fixture(
+        task_counts={"EN-T1": 0, "EN-T2": 0, "EN-T3": 0},
+        last_task_times={"EN-T1": 100},
+        source_slots=(source,))
+    assert "EN-T1" not in {s.target_id for s in result.slots}
+    assert {s.target_id for s in result.slots} == {"EN-T2", "EN-T3"}
+    assert "target_already_engaged" in {r.reason for r in result.rejected}
+
+
+def test_enrichment_round_loop_makes_duplicate_pair_reachable_at_higher_cap():
+    # 파인딩 1·2 수정: max_slots_per_target>1이면 build_enrichment_slots가
+    # 표적 목록을 그 값만큼 라운드로 돈다(단일 패스로는 이 config 값이
+    # 아무 것도 하지 않는 죽은 설정 키였다). 사수를 하나로 좁혀 두 번째
+    # 라운드도 같은 사수를 다시 시도하게 만든다 — 그래야 duplicate_pair가
+    # 실제로 재현된다. 이 시나리오에서도 target_cap_reached는 나오지
+    # 않는다: 라운드 수가 상한과 같아서 검사 시점의 카운트가 항상 상한
+    # 미만이기 때문이다(build_enrichment_slots의 _target_precheck 주석 참고
+    # — 이 상한 자체는 라운드 수가 강제하므로 결과는 여전히 옳다).
+    layout = _enrichment_layout()
+    ranges = _enrichment_ranges()
+    registry = {
+        "FR-S1": _enrichment_shooter("FR-S1"),
+        "EN-T1": _enrichment_target("EN-T1", "LOC_T1"),
+        "EN-T2": _enrichment_target("EN-T2", "LOC_T2"),
+    }
+    config = dataclasses.replace(EnrichmentConfig.defaults(),
+                                 min_new_unique_pairs=2,
+                                 max_slots_per_target=2,
+                                 max_slots_per_shooter=5)
+    result = build_enrichment_slots(
+        events=[], registry=registry, layout=layout, ranges=ranges,
+        config=config, task_counts={}, last_task_times={},
+        eligible_shooter_ids=["FR-S1"], blocked_shooters={},
+        source_slots=())
+    assert Counter(s.target_id for s in result.slots) == \
+           Counter({"EN-T1": 1, "EN-T2": 1})
+    assert Counter(r.reason for r in result.rejected) == \
+           Counter({"duplicate_pair": 2})
 
 
 def test_enrichment_raises_when_minimum_pairs_unreachable():

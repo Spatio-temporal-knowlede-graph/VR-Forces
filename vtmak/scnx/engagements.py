@@ -231,6 +231,16 @@ def _target_precheck(target_id: str, registry: dict[str, EntityDef],
     if target_id in already_engaged:
         return "target_already_engaged"
     if target_slot_counts.get(target_id, 0) >= config.max_slots_per_target:
+        # 2026-08-27 실측: build_enrichment_slots가 라운드를
+        # range(max_slots_per_target)번 돈다 — 라운드 수가 상한과 같으므로
+        # 표적 하나는 최대 상한만큼만 방문되고, 이 검사 시점의
+        # target_slot_counts는 항상 (그 표적이 지금까지 받은 라운드 수) 이하,
+        # 즉 상한 미만이다. 그래서 이 분기는 현재 설계에서 절대 참이 될 수
+        # 없다(라운드 수를 상한보다 늘리면 상한=1일 때 기존 단일 패스와
+        # 동일해야 한다는 요구와 충돌한다 — 추가 라운드가 상한=1에서도 매
+        # 표적에 새 거절을 만든다). 상한 자체는 라운드 수가 실제로
+        # 강제한다 — 아래 분기는 그 강제의 이유를 감사 기록에 남기지
+        # 못하는 채로 죽은 코드로 남아 있다.
         return "target_cap_reached"
     return None
 
@@ -264,6 +274,11 @@ def build_enrichment_slots(
     를 갱신해 다음 표적의 사수 정렬을 바꾸는 방식으로 결정적으로 일어난다.
     후보 하나의 실패는 SlotRejection만 남기고 다음 후보로 넘어간다. 전체
     컴파일을 멈추지 않는다(설계 §12) — min_new_unique_pairs 미달만 예외다.
+
+    사전조건: eligible_shooter_ids와 blocked_shooters의 키는 반드시
+    registry에 있는 object_id여야 한다. registry에 없는 id를 넘기면
+    KeyError가 난다 — 호출부가 registry와 다른 소스에서 후보를 모았다는
+    뜻이므로 조용히 넘기지 않고 그 자리에서 드러내는 편이 낫다.
     """
     tracker = PositionTracker(events, registry)
     hit_at = engagement_locations(events)
@@ -294,97 +309,114 @@ def build_enrichment_slots(
     reserved_firing_refs: set[str] = set()
     accepted: list[EngagementSlot] = []
 
-    for target_id in targets:
-        if len(accepted) >= config.target_new_unique_pairs:
-            break              # 목표 수에서 멈춘다
-
-        precheck = _target_precheck(target_id, registry, task_counts, config,
-                                    already_engaged, target_slot_counts)
-        if precheck:
-            rejected.append(SlotRejection("", target_id, precheck))
-            continue
-
-        shooters = sorted(shooter_pool,
-                          key=lambda oid: (assigned_shooters[oid],
-                                           source_fire_counts[oid], oid))
-        picked: EngagementSlot | None = None
-        for shooter_id in shooters:
-            reason = _pair_precheck(shooter_id, target_id, registry, config,
-                                    assigned_shooters, accepted_pairs)
-            if reason:
-                rejected.append(SlotRejection(shooter_id, target_id, reason))
-                continue
-
-            shooter = registry[shooter_id]
-            range_spec = ranges.spec(shooter.entity_class, "direct")
-            if range_spec is None:
-                rejected.append(SlotRejection(shooter_id, target_id,
-                                              "no_direct_range"))
-                continue
-
-            accepted_index = len(accepted)
-            scheduled_time_s = (
-                max(last_task_times.get(shooter_id, 0),
-                   last_task_times.get(target_id, 0))
-                + config.slot_spacing_s * (accepted_index + 1))
-            shooter_coord, target_coord, target_ref = _resolve_pair_coords(
-                shooter_id, target_id, scheduled_time_s, "", registry, layout,
-                tracker, hit_at)
-
-            spo = (shooter_id, target_ref)
-            if spo in accepted_spo:
-                # 같은 SPO를 다시 만들지 않는 것이 목적이므로 사유만 남기고
-                # 버린다 — 재시도 큐를 두지 않는다(다음 사수로 넘어간다).
-                rejected.append(SlotRejection(shooter_id, target_id,
-                                              "duplicate_suppress_spo"))
-                continue
-
-            distance = ground_distance(shooter_coord, target_coord)
-            firing_ref, firing_coord = "", None
-            if not (range_spec.min_m <= distance <= range_spec.max_m):
-                loc = choose_firing_location(layout, shooter_coord,
-                                             target_coord, range_spec,
-                                             reserved_firing_refs)
-                if loc is None:
-                    rejected.append(SlotRejection(shooter_id, target_id,
-                                                  "no_verified_firing_location"))
-                    continue
-                firing_ref, firing_coord = loc
-                reserved_firing_refs.add(firing_ref)
-                shooter_coord = firing_coord
-                distance = ground_distance(firing_coord, target_coord)
-
-            picked = EngagementSlot(
-                slot_id=f"ENR-{accepted_index:03d}-{shooter_id}-{target_id}",
-                origin="enrichment",
-                source_event_ids=(),
-                scheduled_time_s=scheduled_time_s,
-                shooter_id=shooter_id,
-                target_id=target_id,
-                shooter_coord=shooter_coord,
-                target_coord=target_coord,
-                target_ref=target_ref,
-                firing_ref=firing_ref,
-                firing_coord=firing_coord,
-                distance_m=distance,
-                target_task_count=task_counts.get(target_id, 0),
-                direct_fire_rounds=config.direct_fire_rounds,
-                suppress_rapid_duration_s=config.suppress_rapid_duration_s,
-                suppress_duration_s=config.suppress_duration_s,
-                suppress_ammo_limit=config.suppress_ammo_limit,
-                provenance=f"enrichment:low_task_target:{target_id}",
-            )
-            assigned_shooters[shooter_id] += 1
-            accepted_pairs.add((shooter_id, target_id))
-            accepted_spo.add(spo)
-            target_slot_counts[target_id] = (
-                target_slot_counts.get(target_id, 0) + 1)
+    # 표적당 상한(max_slots_per_target)이 1보다 크면 표적 하나가 한 라운드에
+    # 하나씩, 여러 라운드에 걸쳐 슬롯을 받아야 한다. 단일 패스로는 이
+    # config 값이 아무 것도 하지 않는 죽은 설정 키가 된다(설계 스펙 §11).
+    # 라운드 수를 상한과 같게 둔다 — 그래야 상한=1일 때 기존 단일 패스와
+    # 완전히 같아진다(라운드가 하나뿐이므로).
+    reached_limit = False
+    for _round in range(config.max_slots_per_target):
+        if reached_limit:
             break
+        for target_id in targets:
+            if len(accepted) >= config.target_new_unique_pairs:
+                reached_limit = True
+                break              # 목표 수에서 멈춘다
 
-        if picked is not None:
-            accepted.append(picked)
-            if len(accepted) >= config.max_new_unique_pairs:
-                break          # 상한을 절대 넘지 않는다
+            precheck = _target_precheck(target_id, registry, task_counts,
+                                        config, already_engaged,
+                                        target_slot_counts)
+            if precheck:
+                rejected.append(SlotRejection("", target_id, precheck))
+                continue
+
+            shooters = sorted(shooter_pool,
+                              key=lambda oid: (assigned_shooters[oid],
+                                               source_fire_counts[oid], oid))
+            picked: EngagementSlot | None = None
+            for shooter_id in shooters:
+                reason = _pair_precheck(shooter_id, target_id, registry,
+                                        config, assigned_shooters,
+                                        accepted_pairs)
+                if reason:
+                    rejected.append(SlotRejection(shooter_id, target_id,
+                                                  reason))
+                    continue
+
+                shooter = registry[shooter_id]
+                range_spec = ranges.spec(shooter.entity_class, "direct")
+                if range_spec is None:
+                    rejected.append(SlotRejection(shooter_id, target_id,
+                                                  "no_direct_range"))
+                    continue
+
+                accepted_index = len(accepted)
+                scheduled_time_s = (
+                    max(last_task_times.get(shooter_id, 0),
+                       last_task_times.get(target_id, 0))
+                    + config.slot_spacing_s * (accepted_index + 1))
+                shooter_coord, target_coord, target_ref = _resolve_pair_coords(
+                    shooter_id, target_id, scheduled_time_s, "", registry,
+                    layout, tracker, hit_at)
+
+                spo = (shooter_id, target_ref)
+                if spo in accepted_spo:
+                    # 같은 SPO를 다시 만들지 않는 것이 목적이므로 사유만
+                    # 남기고 버린다 — 재시도 큐를 두지 않는다(다음 사수로
+                    # 넘어간다).
+                    rejected.append(SlotRejection(shooter_id, target_id,
+                                                  "duplicate_suppress_spo"))
+                    continue
+
+                distance = ground_distance(shooter_coord, target_coord)
+                firing_ref, firing_coord = "", None
+                if not (range_spec.min_m <= distance <= range_spec.max_m):
+                    loc = choose_firing_location(layout, shooter_coord,
+                                                 target_coord, range_spec,
+                                                 reserved_firing_refs)
+                    if loc is None:
+                        rejected.append(SlotRejection(
+                            shooter_id, target_id,
+                            "no_verified_firing_location"))
+                        continue
+                    firing_ref, firing_coord = loc
+                    reserved_firing_refs.add(firing_ref)
+                    shooter_coord = firing_coord
+                    distance = ground_distance(firing_coord, target_coord)
+
+                picked = EngagementSlot(
+                    slot_id=f"ENR-{accepted_index:03d}-{shooter_id}-"
+                           f"{target_id}",
+                    origin="enrichment",
+                    source_event_ids=(),
+                    scheduled_time_s=scheduled_time_s,
+                    shooter_id=shooter_id,
+                    target_id=target_id,
+                    shooter_coord=shooter_coord,
+                    target_coord=target_coord,
+                    target_ref=target_ref,
+                    firing_ref=firing_ref,
+                    firing_coord=firing_coord,
+                    distance_m=distance,
+                    target_task_count=task_counts.get(target_id, 0),
+                    direct_fire_rounds=config.direct_fire_rounds,
+                    suppress_rapid_duration_s=config.suppress_rapid_duration_s,
+                    suppress_duration_s=config.suppress_duration_s,
+                    suppress_ammo_limit=config.suppress_ammo_limit,
+                    provenance=f"enrichment:low_task_target:{target_id}",
+                )
+                assigned_shooters[shooter_id] += 1
+                accepted_pairs.add((shooter_id, target_id))
+                accepted_spo.add(spo)
+                target_slot_counts[target_id] = (
+                    target_slot_counts.get(target_id, 0) + 1)
+                break
+
+            if picked is not None:
+                accepted.append(picked)
+                if len(accepted) >= config.max_new_unique_pairs:
+                    reached_limit = True
+                    break          # 상한을 절대 넘지 않는다
 
     if len(accepted) < config.min_new_unique_pairs:
         tally = dict(sorted(Counter(r.reason for r in rejected).items()))
