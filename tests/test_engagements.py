@@ -415,3 +415,41 @@ def test_wait_seconds_are_substituted_into_the_harvested_template():
     out = with_wait_seconds(tmpl, 26.0)
     assert "(seconds-to-wait 26.000000)" in out
     assert "60.000000" not in out
+
+
+def test_wait_seconds_raises_on_a_non_positive_value():
+    # 0은 순진한 스케줄러가 실제로 만들어낼 법한 값이라 특히 현실적이다.
+    tmpl = ('(Task (task-type "wait-duration") (subtask False) '
+            '(allow-task-visualizations True) (seconds-to-wait 60.000000))')
+    with pytest.raises(ValueError):
+        with_wait_seconds(tmpl, -1.0)
+    with pytest.raises(ValueError):
+        with_wait_seconds(tmpl, 0.0)
+
+
+def test_wait_seconds_raises_when_the_template_has_no_wait_field():
+    # 대기가 아닌 template(fire-at-target)을 잘못 넘긴 상황의 대역이다.
+    fire = '(Task (task-type "fire-at-target") (max-rounds-to-fire 1))'
+    with pytest.raises(ValueError):
+        with_wait_seconds(fire, 26.0)
+
+
+@pytest.mark.parametrize("pln", [
+    '(Task (task-type "move-along") (subtask False) '
+    '(route "VRF_UUID:ROUTE_UUID") (traversal-direction 0) '
+    '(start-at-closest-point True))',
+    '(Task (task-type "find_cover") (subtask False) '
+    '(script-id "find_cover") (variables '
+    '(DtRwReal (Range 100.000000) ) ) )',
+    '(Task (task-type "find_firing_position") (subtask False) '
+    '(script-id "find_firing_position") (variables '
+    '(DtRwReal (Range 100.000000) ) ) )',
+])
+def test_patrol_and_positioning_tasks_are_unbounded(pln):
+    # move-along은 UAV 순찰 task다 — _MOVE_TASKS를 "move가 들어가니 이동
+    # task겠지"로 넓히면 끝나지 않는 순찰을 유한 이동으로 오판해 그 뒤에
+    # 교전을 배치하게 된다. find_cover·find_firing_position도 스크립트
+    # task라 종료 시각을 모른다. 세 task-type을 이름으로 못박아 두지 않으면
+    # _MOVE_TASKS나 default_task_duration_s 분기가 우연히 넓어져도 이 테스트가
+    # 잡아내지 못한다.
+    assert estimate_step_duration(_step(pln), CFG, 0.0) == UNBOUNDED
