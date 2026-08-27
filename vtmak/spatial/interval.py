@@ -18,6 +18,7 @@ _Key = tuple[str, str, str]
 class _Open:
     t_start: str
     t_end: str
+    start_seconds: float
     last_seconds: float
     support_count: int
     evidence: str
@@ -34,7 +35,7 @@ class IntervalAccumulator:
     def __init__(self, max_merge_gap_s: float) -> None:
         self._max_gap = max_merge_gap_s
         self._open: dict[_Key, _Open] = {}
-        self._closed: list[RelationInterval] = []
+        self._closed: list[tuple[float, RelationInterval]] = []
 
     def observe(self, timestamp: str, seconds: float,
                 observations: Iterable[Observation]) -> None:
@@ -54,22 +55,26 @@ class IntervalAccumulator:
                 continue
             if state is not None:
                 self._shut(key)
-            self._open[key] = _Open(timestamp, timestamp, seconds, 1, item.evidence)
+            self._open[key] = _Open(timestamp, timestamp, seconds, seconds, 1, item.evidence)
 
     def close(self) -> list[RelationInterval]:
         for key in list(self._open):
             self._shut(key)
-        self._closed.sort(key=lambda r: (r.subject, r.predicate, r.object, r.t_start))
-        return self._closed
+        # t_start 문자열이 아니라 start_seconds로 정렬한다. 실운영 타임스탬프는
+        # ISO 8601이라 문자열 정렬이 우연히 맞아떨어지지만, 그 가정을 이 모듈이
+        # 강제하지는 않는다. 두 필드 다 정렬 가능해 보이니 헷갈리지 말 것.
+        self._closed.sort(
+            key=lambda row: (row[1].subject, row[1].predicate, row[1].object, row[0]))
+        return [interval for _, interval in self._closed]
 
     def _shut(self, key: _Key) -> None:
         state = self._open.pop(key)
         subject, predicate, obj = key
-        self._closed.append(RelationInterval(
+        self._closed.append((state.start_seconds, RelationInterval(
             subject=subject, predicate=predicate, object=obj,
             t_start=state.t_start, t_end=state.t_end,
             support_count=state.support_count, evidence=state.evidence,
-        ))
+        )))
 
 
 def canonicalize(observations: Iterable[Observation],

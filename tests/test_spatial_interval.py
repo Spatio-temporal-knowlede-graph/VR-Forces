@@ -85,3 +85,12 @@ def test_no_interval_spans_a_gap_beyond_the_limit():
     out = acc.close()
     assert len(out) == 2
     assert [i.support_count for i in out] == [3, 2]
+
+
+def test_intervals_for_one_triple_come_back_in_time_order():
+    # 문자열 정렬이면 't10'이 't9'보다 앞선다. 구간 순서는 시각을 따라야 한다.
+    acc = IntervalAccumulator(3.0)
+    acc.observe("t9", 9.0, [NEXT_TO])
+    acc.observe("t10", 100.0, [NEXT_TO])      # 간격이 상한을 넘어 구간이 갈린다
+    out = acc.close()
+    assert [i.t_start for i in out] == ["t9", "t10"]
