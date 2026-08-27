@@ -1059,6 +1059,7 @@ git commit -m "fix(scnx): keep interaction queues reachable"
 - Modify: `vtmak/scnx/spec.py:235-298`
 - Modify: `vtmak/scnx/gates.py`
 - Modify: `vtmak/scnx/engagements.py`
+- Modify: `vtmak/scnx/audit.py:189-306`
 - Modify: `scripts/04_compile_scnx.py:43-105`
 - Modify: `tests/test_spec.py`
 - Modify: `tests/test_audit.py`
@@ -1271,7 +1272,22 @@ def validate_interaction_plan(spec: ScnxSpec,
 
 설계 §12의 나머지 두 항목은 기존 게이트가 이미 덮으므로 G4에서 다시 검사하지 않는다. 괄호 불균형은 G3의 C3.6이, "공격자에게 유효한 직접사격 무기 또는 task 템플릿이 없음"은 G3의 C3.5(`템플릿 없음` issue → BLOCK)와 C3.8(무기 실재 검사)이 잡는다. 사거리 표에 직접사거리가 없는 경우만 슬롯 선택 단계의 `no_direct_range` 거절로 걸러진다.
 
-- [ ] **Step 5: Produce audit rows in `engagements.py`**
+- [ ] **Step 5: Repair slot-step reference resolution in `audit.py`**
+
+Task 4 gave engagement steps `slot.slot_id` as their `event_id`, so `build_rows`의 `by_event.get(step.event_id)` 폴백이 빈 문자열을 돌려준다. 제압사격은 좌표 task라 `.pln` 안에 UUID가 없으므로 `_resolve_ref`도 못 채운다 — 결과적으로 `build/timetable/battle_scnx_tasks.csv`의 제압사격 77행이 `ref_id`·`ref_kind` 없이 조용히 비어 나간다. 예전 배타 저작에서는 그 행들이 실제 event를 달고 있어 `_event_ref`가 `e.target`을 복구했으므로 이건 회귀다.
+
+`build_rows`에 `slots_by_id = {s.slot_id: s for s in spec.engagement_slots}`를 만들고, `step.slot_id`가 있는 단계는 이벤트 폴백 대신 슬롯에서 참조를 푼다.
+
+```python
+slot = slots_by_id.get(step.slot_id) if step.slot_id else None
+if slot is not None and not ref_id:
+    ref_id = slot.target_ref if step.task_kind == "suppress" else slot.target_id
+    ref_kind = "COORD" if step.task_kind == "suppress" else "ENTITY"
+```
+
+`tests/test_audit.py`의 `test_references_resolve_to_readable_names`에서 Task 4가 넣은 `suppress` 예외를 **되돌린다**. 제압사격 행도 이제 `ref_id`를 갖는다. 예외를 남겨 두면 이 수리가 됐는지 아무도 모른다.
+
+- [ ] **Step 6: Produce audit rows in `engagements.py`**
 
 ```python
 AUDIT_COLUMNS = ["slot_id", "origin", "scheduled_time_s", "shooter_id",
@@ -1294,7 +1310,7 @@ def slot_audit_rows(spec) -> list[list[str]]:
     return rows
 ```
 
-- [ ] **Step 6: Wire script 04**
+- [ ] **Step 7: Wire script 04**
 
 `scripts/04_compile_scnx.py`에서:
 
@@ -1317,13 +1333,13 @@ with open(engagement_dir / "audit.csv", "w", encoding="utf-8",
 
 요약 출력에 `원문 교전 {n} · 신규 교전 {m} · 예상 제압 SPO {k}` 한 줄을 더한다.
 
-- [ ] **Step 7: Run integration and audit tests**
+- [ ] **Step 8: Run integration and audit tests**
 
 Run: `python -m pytest tests/test_spec.py tests/test_audit.py tests/test_fixed_objects.py -v`
 
 Expected: 전부 통과. source 슬롯 77개, 보강 20~30개, UAV 고정 계획이 보강 on/off에서 동일.
 
-- [ ] **Step 8: Commit build integration**
+- [ ] **Step 9: Commit build integration**
 
 ```bash
 git add vtmak/scnx/spec.py vtmak/scnx/gates.py vtmak/scnx/engagements.py scripts/04_compile_scnx.py tests/test_spec.py tests/test_audit.py tests/test_fixed_objects.py
