@@ -6,10 +6,13 @@
 
 파생 관계는 전부 `layer` · `rule_id` · `provenance`를 달고 나간다. 셋 중
 하나라도 없으면 어느 규칙이 왜 그 관계를 만들었는지 되짚을 수 없고, 그러면
-Track A와 섞였을 때 구분할 방법이 사라진다. 관측 규칙(R1~R7, `layer="derived"`)의
-provenance는 근거 event_id다. `orbat_relations`의 편제 규칙(R8·R9,
-`layer="orbat"`)은 이벤트를 안 읽어 event_id가 없으므로 대신 그 값을 선언한
-설정 파일(`config/orbat.json`)을 가리킨다.
+Track A와 섞였을 때 구분할 방법이 사라진다. provenance는 근거 event_id다 —
+모든 규칙이 이벤트를 읽으므로 예외가 없다.
+
+부대·편제가 주어인 관계(옛 R5·R6·R8~R12)는 두지 않는다. 소대·중대·대대는
+원문 1,294줄에 한 번도 안 나오는 저작물이라, 그것을 주어로 삼은 fact는
+관측에서 확인할 길이 없다. 구성원 관측을 접어 만든 값(옛 R10~R12)도
+마찬가지다 — 접는 기준인 소속 자체가 관측이 아니다.
 
 주의 — `vtmak/stkg/predicate.py`의 어휘(`follows`·`moves_to`…)는 저작이 끝난
 `.pln`을 역파싱하는 별개 체계다. 이름이 비슷해도 같은 어휘가 아니다.

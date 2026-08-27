@@ -3,7 +3,6 @@
 실측 기대치(2026-08-07, build/events/battle.jsonl 3,000건)는 데이터를 세어
 얻은 값이다. 숫자가 틀어지면 규칙이 아니라 입력이 바뀐 것이니 둘 다 본다.
 """
-import json
 from collections import Counter
 from pathlib import Path
 
@@ -11,15 +10,9 @@ import pytest
 
 from vtmak.derive.config import DeriveRules
 from vtmak.derive.events import EventIndex
-from vtmak.derive.orbat_relations import (r10_unit_moves, r11_unit_occupies,
-                                          r12_unit_fires)
 from vtmak.derive.relations import (r1r2_hit_state, r3_direct_fire,
-                                    r4_indirect_fire, r6_unit_suppressed,
-                                    r7_precedes, unit_members)
-from vtmak.geometry import BattlefieldLayout
-from vtmak.orbat import OrbatConfig, build_orbat
+                                    r4_indirect_fire, r7_precedes)
 from vtmak.parser import Event
-from vtmak.registry import ClassMap, build_registry
 
 ROOT = Path(__file__).resolve().parents[1]
 EVENTS = ROOT / "build" / "events" / "battle.jsonl"
@@ -34,20 +27,6 @@ def idx():
 @pytest.fixture(scope="module")
 def rules():
     return DeriveRules.load(CFG / "derive_rules.csv")
-
-
-@pytest.fixture(scope="module")
-def orbat():
-    """R10~R12를 불변식 테스트에 넣기 위한 편제. tests/test_derive_orbat.py의
-    픽스처와 같은 구성이다 — 정적 객체 7개는 BattlefieldLayout으로 뺀다.
-    """
-    evs = [Event(**{k: v for k, v in json.loads(l).items()
-                    if k != "source_line"})
-           for l in open(EVENTS, encoding="utf-8")]
-    layout = BattlefieldLayout.load(CFG / "battlefield_layout.json")
-    reg = build_registry(evs, ClassMap.load(CFG / "entity_class_map.csv"),
-                         layout.static_ids())
-    return build_orbat(reg, OrbatConfig.load(CFG / "orbat.json"))
 
 
 def ev(event_id, time_s, predicate, **kw):
@@ -257,85 +236,6 @@ def test_r7_skips_events_without_an_actor(idx, rules):
     assert touched.isdisjoint(empty)
 
 
-# ── R5 부대 아닌 객체 제외 ───────────────────────────────────────────────
-def suppressed_line(no, victim, attacker="A", t=10):
-    """피격 + 같은 줄 제압 전이 — R1이 관계를 만드는 최소 형태."""
-    return [ev(f"H{no}", t, "hitBy", actor=victim, source_obj=attacker, line_no=no),
-            ev(f"S{no}", t, "stateChangedTo", actor=victim, line_no=no,
-               template="stateChange", state_from="기동 또는 사격 가능",
-               state_to="제압")]
-
-
-def test_r5_drops_places_and_facilities_from_the_unit_list(idx, rules):
-    """지명·시설은 부대가 아니다. 무엇이 시설인지는 표가 정한다."""
-    kept = unit_members(idx, rules)
-    assert len(kept) == 30
-    assert set(kept) & {"EN-FP", "FR-FP", "EN-RT", "FR-LN", "OBJ"} == set()
-    assert sum(len(v) for v in kept.values()) == 335 - 7
-
-
-def test_r5_excluded_codes_are_not_hardcoded(idx, rules, monkeypatch):
-    """표를 비우면 35부대가 전부 돌아온다 — 제외는 코드가 아니라 표의 결정이다."""
-    monkeypatch.setattr(rules, "excluded_unit_codes", set)
-    assert len(unit_members(idx, rules)) == 35
-
-
-def test_r5_excludes_the_prefixless_form(rules):
-    """OBJ-009는 진영 접두가 없는 유일한 형태다 — 코드가 첫 조각에 온다."""
-    idx = EventIndex([ev("E1", 1, "locatedAt", actor="OBJ-009"),
-                      ev("E2", 1, "locatedAt", actor="FR-INF-001")])
-    assert set(unit_members(idx, rules)) == {"FR-INF"}
-
-
-# ── R6 부대 제압 판정 ────────────────────────────────────────────────────
-def test_r6_marks_the_two_units_past_the_threshold(idx, rules):
-    res = r6_unit_suppressed(idx, rules)
-    assert {(r.rule_id, r.predicate) for r in res.relations} == {
-        ("R6", "unitSuppressed")}
-    assert {r.subject for r in res.relations} == {"EN-INF", "FR-INF"}
-
-
-def test_r6_threshold_comes_from_the_table(idx, rules, monkeypatch):
-    """0.5로는 한 건도 안 나온다 — 실측 최댓값이 0.35(EN-INF 35/100)다.
-
-    0.25라는 값의 근거가 측정이라는 것을, 올렸을 때 0건이 되는 것으로 고정한다.
-    """
-    monkeypatch.setattr(rules, "threshold", lambda key: 0.5)
-    assert r6_unit_suppressed(idx, rules).relations == ()
-    #  두 부대는 0.2667(FR-INF 16/60)과 0.35(EN-INF 35/100) 사이에서 갈린다.
-    monkeypatch.setattr(rules, "threshold", lambda key: 0.3)
-    assert {r.subject for r in r6_unit_suppressed(idx, rules).relations} == {
-        "EN-INF"}
-
-
-def test_r6_counts_members_not_hits(rules):
-    """한 구성원이 두 번 제압돼도 한 명이다. 비율의 분자는 개체 수다."""
-    idx = EventIndex(suppressed_line(1, "FR-INF-001")
-                     + suppressed_line(2, "FR-INF-001", t=20)
-                     + [ev("X1", 1, "locatedAt", actor=f"FR-INF-{i:03d}")
-                        for i in range(2, 5)])
-    #  4명 중 1명 = 0.25 → 임계값 이상. 피격 2건을 2명으로 세면 0.5가 된다.
-    res = r6_unit_suppressed(idx, rules)
-    assert {r.subject for r in res.relations} == {"FR-INF"}
-    assert len(res.relations) == 1
-
-
-def test_r6_never_reports_an_excluded_unit(rules):
-    """지역이 제압 전이를 받아도 부대가 되지는 않는다."""
-    idx = EventIndex(suppressed_line(1, "OBJ-009"))
-    assert r1r2_hit_state(idx, rules).relations       # R1은 관계를 만든다
-    assert r6_unit_suppressed(idx, rules).relations == ()
-
-
-def test_r6_provenance_reaches_the_member_evidence(idx, rules):
-    """부대 판정의 근거는 구성원 하나하나의 피격·전이 이벤트다."""
-    by_id = {e.event_id: e for e in idx.events}
-    for r in r6_unit_suppressed(idx, rules).relations:
-        actors = {by_id[p].actor for p in r.provenance}
-        assert actors <= set(unit_members(idx, rules)[r.subject])
-        assert len(r.provenance) == 2 * (35 if r.subject == "EN-INF" else 16)
-
-
 # ── 규칙 간 정합성 ───────────────────────────────────────────────────────
 def test_every_hit_state_pair_has_exactly_one_direct_fire_cause(idx, rules):
     """개체쌍 레이어(R1·R2)와 이벤트쌍 레이어(R3)를 서로 봉인한다.
@@ -357,7 +257,6 @@ def _run_all(index, rules):
     return (r1r2_hit_state(index, rules).relations
             + r3_direct_fire(index).relations
             + r4_indirect_fire(index, rules).relations
-            + r6_unit_suppressed(index, rules).relations
             + r7_precedes(index, rules).relations)
 
 
@@ -387,24 +286,19 @@ def test_sources_and_sinks_are_consumed_in_time_order(idx):
 
 
 @pytest.mark.parametrize("rule,expected", [
-    ("r1r2", {"R1", "R2"}), ("r3", {"R3"}), ("r4", {"R4"}), ("r6", {"R6"}),
-    ("r7", {"R7"}), ("r10", {"R10"}), ("r11", {"R11"}), ("r12", {"R12"})])
-def test_every_relation_carries_layer_rule_and_provenance(idx, rules, orbat,
+    ("r1r2", {"R1", "R2"}), ("r3", {"R3"}), ("r4", {"R4"}), ("r7", {"R7"})])
+def test_every_relation_carries_layer_rule_and_provenance(idx, rules,
                                                           rule, expected):
-    """R10~R12도 이 불변식에서 빠지면 안 된다 — 이 셋은 이전에 여기 빠져
-    있었는데, 그 사이 provenance에 event_id 대신 구성원 id를 넣는 실수가
-    한동안 초록으로 남았다. 구성원 id는 `idx.ids()`(event_id 집합) 밖의
-    값이라 `set(r.provenance) <= known`이 바로 걸린다 — 이 테스트가 있었다면
-    그 실수를 즉시 잡았을 것이다.
+    """규칙마다 layer·rule_id·provenance 셋을 다 달고 나오는지 본다.
+
+    provenance는 event_id여야 한다. 다른 id를 넣으면 `idx.ids()` 밖의 값이라
+    `set(r.provenance) <= known`에서 바로 걸린다 — 원문 문장까지 되짚는 길이
+    끊긴 것을 조용히 넘기지 않는다.
     """
     res = {"r1r2": lambda: r1r2_hit_state(idx, rules),
            "r3": lambda: r3_direct_fire(idx),
            "r4": lambda: r4_indirect_fire(idx, rules),
-           "r6": lambda: r6_unit_suppressed(idx, rules),
-           "r7": lambda: r7_precedes(idx, rules),
-           "r10": lambda: r10_unit_moves(idx, orbat, rules),
-           "r11": lambda: r11_unit_occupies(idx, orbat, rules),
-           "r12": lambda: r12_unit_fires(idx, orbat, rules)}[rule]()
+           "r7": lambda: r7_precedes(idx, rules)}[rule]()
     known = idx.ids()
     assert res.relations
     for r in res.relations:

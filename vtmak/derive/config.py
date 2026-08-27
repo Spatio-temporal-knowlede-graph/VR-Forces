@@ -12,7 +12,7 @@ import csv
 from pathlib import Path
 
 # 표가 쓸 수 있는 kind. 오타 하나가 규칙을 조용히 0건으로 만드는 걸 막는다.
-_KINDS = {"hit_state", "area_state", "exclude_unit_code", "threshold", "flag"}
+_KINDS = {"hit_state", "area_state", "threshold", "flag"}
 
 _TRUE = {"true", "yes", "1"}
 _FALSE = {"false", "no", "0"}
@@ -22,7 +22,6 @@ class DeriveRules:
     def __init__(self) -> None:
         self._hit_states: dict[str, tuple[str, str]] = {}
         self._area_state: tuple[str, str] | None = None
-        self._excluded: set[str] = set()
         self._thresholds: dict[str, float] = {}
         self._flags: dict[str, bool] = {}
 
@@ -41,8 +40,6 @@ class DeriveRules:
                 elif kind == "area_state":
                     before, _, after = key.partition(">")
                     c._area_state = (before.strip(), after.strip())
-                elif kind == "exclude_unit_code":
-                    c._excluded.add(key)
                 elif kind == "threshold":
                     c._thresholds[key] = float(value)
                 else:
@@ -62,10 +59,6 @@ class DeriveRules:
         if self._area_state is None:
             raise KeyError("derive_rules.csv에 area_state 행이 없다")
         return self._area_state
-
-    def excluded_unit_codes(self) -> set[str]:
-        """부대가 아닌 객체의 코드 — 지역·시설 표기다."""
-        return set(self._excluded)
 
     def threshold(self, key: str) -> float:
         if key not in self._thresholds:

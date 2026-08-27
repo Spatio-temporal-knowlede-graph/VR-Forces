@@ -110,7 +110,6 @@ python scripts/06_evaluate_dataset.py      # 후처리 산출물 평가 (E1·E2�
 | `config/entity_class_map.csv` | 02 → 03 → 04 |
 | `config/task_catalog.csv` | 04 |
 | `config/dis_catalog.csv` | 04 |
-| `config/orbat.json` | **07** (편제는 후처리에서만 쓴다 — `.scnx`에 안 들어간다) |
 
 `config/battlefield_layout.json`은 **생성물이다. 손으로 고치지 말 것** — 01이
 덮어쓰고, 어긋나면 테스트가 잡는다.

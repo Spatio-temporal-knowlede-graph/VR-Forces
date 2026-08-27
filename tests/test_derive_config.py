@@ -28,14 +28,17 @@ def test_area_state_marks_the_indirect_fire_impact(rules):
     assert rules.area_state() == ("정상", "피격 지역")
 
 
-def test_excluded_unit_codes_are_listed_not_guessed(rules):
-    """지역·시설은 부대가 아니다. 무엇이 시설인지는 표가 정한다."""
-    assert rules.excluded_unit_codes() == {"FP", "RT", "LN", "OBJ"}
+def test_threshold_is_a_float_from_the_table(tmp_path):
+    """현 표에는 임계값 행이 없다 — 부대 접기 비율이 유일한 용도였다.
 
-
-def test_threshold_is_a_float_from_the_table(rules):
-    v = rules.threshold("suppressed_ratio")
-    assert isinstance(v, float) and 0.0 < v <= 1.0
+    kind는 남긴다. 값을 코드가 아니라 표에서 읽는다는 계약은 규칙이 하나
+    없어졌다고 사라지지 않는다. 그래서 표에 없는 지금도 파싱은 못 박아 둔다.
+    """
+    p = tmp_path / "t.csv"
+    p.write_text("rule_id,kind,key,value,note\nR0,threshold,ratio,0.25,\n",
+                 encoding="utf-8")
+    v = DeriveRules.load(p).threshold("ratio")
+    assert isinstance(v, float) and v == 0.25
 
 
 def test_flag_reads_true_false(rules):
@@ -52,7 +55,7 @@ def test_unknown_lookups_are_loud_not_empty(rules):
 
 def test_unknown_kind_is_rejected_at_load(tmp_path):
     p = tmp_path / "bad.csv"
-    p.write_text("rule_id,kind,key,value,note\nR9,오타kind,a,b,\n",
+    p.write_text("rule_id,kind,key,value,note\nR0,오타kind,a,b,\n",
                  encoding="utf-8")
     with pytest.raises(ValueError, match="오타kind"):
         DeriveRules.load(p)

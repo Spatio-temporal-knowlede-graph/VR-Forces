@@ -16,7 +16,6 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 
 from ..parser import Event
-from ..roster import unit_of
 from .events import EventIndex
 
 # 관계가 붙는 층. Track A(추출 정본)와 섞였을 때 이 값이 유일한 구분자다.
@@ -150,78 +149,6 @@ def r4_indirect_fire(index: EventIndex, rules) -> RuleResult:
         rels.append(Relation("R4", "firesUpon", fire.actor, fire.target, why))
         rels.append(Relation("R4", "causes", fire.event_id, impact.event_id, why))
     return RuleResult(tuple(rels), tuple(unmatched))
-
-
-def unit_members(index: EventIndex, rules, orbat=None) -> dict[str, tuple[str, ...]]:
-    """R5 — 부대 → 구성원. 지명·시설은 부대 목록에서 빠진다.
-
-    `EN-FP-001`(사격진지)·`FR-LN-001`(방어선)·`OBJ-009`(중앙 킬존)는 문장에서
-    객체처럼 다뤄지지만 부대가 아니다. 빼지 않으면 R6가 '사격진지 부대'의
-    제압 비율을 재게 된다.
-
-    어느 코드가 시설인지는 derive_rules.csv가 정한다. 코드는 부대명의 마지막
-    조각이다 — `OBJ-009`는 진영 접두가 없어 `OBJ` 자체가 부대명이 된다.
-
-    편제(orbat)를 주면 소대가 부대다. 안 주면 예전대로 id 접두사(FR-INF)를
-    쓴다 — 그건 정원표(roster.json) 키라 편제가 아니지만, 편제표 없이도 R6가
-    돌아야 한다.
-    """
-    if orbat is not None:
-        members: dict[str, list[str]] = defaultdict(list)
-        seen: set[str] = set()
-        for e in index.events:
-            for oid in (e.actor, e.target, e.source_obj):
-                if not oid or oid in seen:
-                    continue
-                seen.add(oid)
-                pl = orbat.platoon_of(oid)
-                if pl:
-                    members[pl].append(oid)
-        return {u: tuple(v) for u, v in sorted(members.items())}
-
-    excluded = rules.excluded_unit_codes()
-    members = defaultdict(list)
-    seen = set()
-    for e in index.events:
-        for oid in (e.actor, e.target, e.source_obj):
-            if not oid or oid in seen:
-                continue
-            seen.add(oid)
-            unit = unit_of(oid)
-            if unit.split("-")[-1] not in excluded:
-                members[unit].append(oid)
-    return {u: tuple(v) for u, v in sorted(members.items())}
-
-
-def r6_unit_suppressed(index: EventIndex, rules, orbat=None) -> RuleResult:
-    """R6 — 구성원의 제압 비율이 임계값 이상인 부대.
-
-    분자는 피격 건수가 아니라 **제압된 구성원 수**다. 한 명이 두 번 제압돼도
-    한 명이고, 건수로 세면 소수가 반복 피격된 부대가 전멸한 것처럼 읽힌다.
-
-    분모는 이벤트에 등장한 그 부대의 객체 수다. roster.json의 정원과 실측이
-    일치하지만(EN-INF 100, FR-INF 60) 명부를 읽지는 않는다 — 이 패키지는
-    battle.jsonl의 순수 소비자이고, 정원은 명부 감축이 바꿀 수 있는 값이다.
-
-    편제(orbat)를 주면 분모가 소대가 된다 — `orbat.platoon_of`가 정적 객체에
-    `None`을 주므로 `exclude_unit_code` 필터가 저절로 걸린다.
-    """
-    ratio = rules.threshold("suppressed_ratio")
-    members = unit_members(index, rules, orbat)
-    hit_by_member: dict[str, list[Relation]] = defaultdict(list)
-    for rel in r1r2_hit_state(index, rules).relations:
-        if rel.predicate == "suppresses":
-            hit_by_member[rel.object].append(rel)
-
-    rels = []
-    for unit, roster in members.items():
-        down = [oid for oid in roster if oid in hit_by_member]
-        if not down or len(down) / len(roster) < ratio:
-            continue
-        why = tuple(p for oid in down
-                    for rel in hit_by_member[oid] for p in rel.provenance)
-        rels.append(Relation("R6", "unitSuppressed", unit, "제압", why))
-    return RuleResult(tuple(rels))
 
 
 def r7_precedes(index: EventIndex, rules) -> RuleResult:
