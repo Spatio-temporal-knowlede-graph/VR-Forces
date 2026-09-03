@@ -20,5 +20,6 @@ build/csv/ground_truth_20260806_155424_dataset.csv
 build/stkg/ground_truth_20260806_155424_annotated.csv
 build/csv/ground_truth_20260809_175237_dataset.csv
 build/stkg/ground_truth_20260809_175237_annotated.csv
+build/stkg/ground_truth_ver1.0.csv
 # 네이티브 worktree 도구가 만드는 격리 작업공간.
 .claude/worktrees/
